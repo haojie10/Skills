@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Store Stationery A5 Ringbound Notebook",
+    "price": "£0.99",
+    "image_url": "https://media.home.bargains/product-images/4/2/b/2/42b21c7c2fcc716e5b3d7ce7ad5a93a86d462ce2.png?fit=cover&x=281&y=294",
+    "url": "https://home.bargains/product/7121f2e9-d55f-4f55-bde8-d936f515e20e/store-stationery-a5-ringbound-notebook",
+    "description": "Store Stationery A5 Ringbound Notebook"
+  },
+  {
+    "name": "Big Plans A4 Neon Notebook - Pink",
+    "price": "£2.49",
+    "image_url": "https://media.home.bargains/product-images/b/2/9/7/b2974d256a9b0ee5fe549042db71cbb6d9c9e61b.png?fit=cover&x=281&y=294",
+    "url": "https://home.bargains/product/9b978bae-4405-4a6e-8016-79470bce1d45/big-plans-a4-neon-notebook-pink",
+    "description": "Big Plans A4 Neon Notebook - Pink"
+  },
+  {
+    "name": "Sweet Shop Notebook",
+    "price": "£4.99",
+    "image_url": "https://media.home.bargains/product-images/1/c/4/4/1c44ebc7728dc269b4038ba9bd98b2d2aafa063f.png?fit=cover&x=281&y=294",
+    "url": "https://home.bargains/product/0e038545-d063-4a5c-9381-9e8762af32b3/sweet-shop-notebook",
+    "description": "Sweet Shop Notebook"
+  },
+  {
+    "name": "Store Stationery Exercise Books 3 Pack",
+    "price": "£1.29",
+    "image_url": "https://media.home.bargains/product-images/9/a/1/b/9a1b406412b38eda4138eaf070c2f3fe8386b5be.png?fit=cover&x=281&y=294",
+    "url": "https://home.bargains/product/6848d318-7e72-4041-b9f8-1dfbb2fca6ca/store-stationery-exercise-books-3-pack",
+    "description": "Store Stationery Exercise Books 3 Pack"
+  },
+  {
+    "name": "Stationery Store A4 Ringbound Notebook",
+    "price": "£0.99",
+    "image_url": "https://media.home.bargains/product-images/d/b/f/3/dbf3c28c575b5e0304641240714bd7974c6e0ce2.png?fit=cover&x=281&y=294",
+    "url": "https://home.bargains/product/a7d55498-8c52-4aac-9b50-641596cc36c3/stationery-store-a4-ringbound-notebook",
+    "description": "Stationery Store A4 Ringbound Notebook"
+  }
+]
