@@ -18,7 +18,7 @@ import argparse
 def get_image_base64_data_url(image_path):
     """读取图片文件并返回 Base64 格式的 Data URL"""
     if not os.path.exists(image_path):
-        print(f"⚠️  错误：图片文件未找到: {image_path}")
+        print(f"[WARN] Image file not found: {image_path}")
         return None
         
     _, ext = os.path.splitext(image_path.lower())
@@ -37,13 +37,13 @@ def get_image_base64_data_url(image_path):
             encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
             return f"data:{mime_type};base64,{encoded_string}"
     except Exception as e:
-        print(f"⚠️  读取图片失败 {image_path}: {e}")
+        print(f"[WARN] Failed to read image {image_path}: {e}")
         return None
 
 def embed_images_in_html(html_path):
     """扫描 HTML 并嵌入本地图片，然后删除本地图片"""
     if not os.path.exists(html_path):
-        print(f"❌ 错误：HTML 文件未找到: {html_path}")
+        print(f"[ERROR] HTML file not found: {html_path}")
         sys.exit(1)
 
     html_dir = os.path.dirname(os.path.abspath(html_path))
@@ -57,10 +57,10 @@ def embed_images_in_html(html_path):
     
     matches = img_pattern.findall(html_content)
     if not matches:
-        print("ℹ️  未在 HTML 中找到引用本地图片的 img 标签。")
+        print("[INFO] No local image references found in HTML.")
         return
 
-    print(f"🔍 找到 {len(matches)} 个待嵌入的图片引用。开始处理...")
+    print(f"[INFO] Found {len(matches)} local image references. Processing...")
     
     embedded_count = 0
     images_to_delete = []
@@ -83,10 +83,10 @@ def embed_images_in_html(html_path):
             if base64_data:
                 embedded_count += 1
                 images_to_delete.append(abs_image_path)
-                print(f"✅ 已成功将图片转换为 Base64 并内嵌: {src_path}")
+                print(f"[OK] Image embedded as Base64: {src_path}")
                 return f"{prefix}{base64_data}{suffix}"
         else:
-            print(f"⚠️  警告：引用的本地图片物理路径不存在: {abs_image_path}")
+            print(f"[WARN] Local image path does not exist: {abs_image_path}")
             
         return match.group(0)
 
@@ -97,22 +97,22 @@ def embed_images_in_html(html_path):
     if embedded_count > 0:
         with open(html_path, "w", encoding="utf-8") as file:
             file.write(new_html_content)
-        print(f"🎉 成功完成 HTML 报告图片嵌入！共嵌入 {embedded_count} 张图片。")
+        print(f"[OK] Image embedding complete! Embedded {embedded_count} images.")
         
         # 清理原图片文件
-        print("🧹 开始清理临时图片文件...")
+        print("[INFO] Cleaning up temporary image files...")
         deleted_count = 0
         for img_path in set(images_to_delete):
             try:
                 if os.path.exists(img_path):
                     os.remove(img_path)
-                    print(f"🗑️  已成功删除临时图片: {os.path.basename(img_path)}")
+                    print(f"[OK] Deleted temp image: {os.path.basename(img_path)}")
                     deleted_count += 1
             except Exception as e:
-                print(f"⚠️  删除文件失败 {img_path}: {e}")
-        print(f"✨ 清理完成。共删除 {deleted_count} 个临时图片文件，目录已保持整洁。")
+                print(f"[WARN] Failed to delete file {img_path}: {e}")
+        print(f"[OK] Cleanup done. Deleted {deleted_count} temp image files.")
     else:
-        print("ℹ️  没有图片被成功嵌入，未做任何修改。")
+        print("[INFO] No images were embedded, no changes made.")
 
 def main():
     parser = argparse.ArgumentParser(description="将 HTML 报告中的本地图片转为 Base64 并内嵌，完成后清理原图片文件。")
