@@ -92,65 +92,22 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
   2. **标志真实一致性**：门店图片上的企业品牌标志、名称、颜色及特有外文标识（如希伯来文、瑞典文等标语）**必须与谷歌地图或官网中的真实店面及招牌完全一致**，严禁出现拼写错误或虚假的 AI 幻觉标志，必要时须根据真实店面照片进行精确绘图或图像重构。
   3. **自包含嵌入**：该图像一律通过 Base64 编码直接嵌入 HTML 模板中，禁止采用任何外部物理链接或相对路径。
 
-### 4. 自动上传到 Globaltradebuddy 平台
+### 4. 自动上传到 Globaltradebuddy 平台（强制执行）
 
-报告生成并通过本地自检后，**必须**执行以下自动上传步骤，将报告发布到 Globaltradebuddy 平台，以建立图谱关联关系。
+报告生成并通过本地自检后，**必须立即调用本技能自带的发布脚本，将生成的自包含 HTML 报告自动推送上传至平台**：
 
-#### 4.1 端点选取（三级优先策略）
+1. 使用 `run_command` 运行 `publish_report.py`：
 
-按以下顺序依次探测，确定实际使用的上传端点：
+   ```bash
+   python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html>
+   ```
 
-**第一优先：本地开发服务（最快）**
-```powershell
-netstat -ano | findstr ":3000"
-```
-- 若 3000 端口**正在监听** → 使用 `http://localhost:3000/api/agent/publish`
+2. **自动发布逻辑**：
+   - 该脚本会自动读取 `d:\我的APP\Globaltradebuddy\.env` 中的 `GTB_API_URL` 配置（默认为 `http://124.222.201.143:3000`）及 `AGENT_API_KEY`。
+   - 解析 HTML 中的 `<meta>` 标签（`company_name`, `summary`, `regions`, `products` 等）并校验标准品类名。
+   - 向 `/api/agent/publish` 发送 POST 请求。若远端接口无法连通，会自动退路尝试 `http://localhost:3000/api/agent/publish`。
+   - 终端打印 `[OK] Report published successfully! ID: ...` 即代表线上发布完成，在最终回复中向用户反馈 Report ID。
 
-**第二优先：远端生产服务（Vercel / 国内服务器）**
-- 若 3000 端口**未监听** → 读取 `d:/我的APP/Globaltradebuddy/.env` 文件中的 `GTB_API_URL` 变量
-- 当前值：`https://globaltradebuddy.vercel.app`（Vercel 生产环境）
-- 拼接完整端点：`{GTB_API_URL}/api/agent/publish`
-
-**第三优先：跳过**
-- 若 `.env` 中 `GTB_API_URL` 不存在或为空 → 跳过上传，在最终回复中提示说明
-
-**认证 Token**：从同一个 `.env` 文件中读取 `AGENT_API_KEY`；若不存在，使用默认值 `test_agent_secret`。
-
-#### 4.2 调用上传接口
-
-使用 Python 内置的 `urllib` 模块（无需任何第三方依赖）发送 POST 请求：
-
-```
-POST {端点地址}
-Authorization: Bearer {AGENT_API_KEY}
-Content-Type: application/json; charset=utf-8
-```
-
-请求体（payload）结构：
-
-```python
-{
-    "type": "report",
-    "title": "<从 HTML <title> 标签提取>",
-    "summary": "<从 meta[name=summary] 提取，150字以内>",
-    "contentHtml": "<完整的 HTML 字符串>",
-    "region": "<从 meta[name=regions] 提取第一个地区>",
-    "country": "<从 meta[name=regions] 提取>",
-    "industry": "<从 meta[name=products] 提取第一个品类>",
-    "tags": ["<品类1>", "<品类2>"]
-}
-```
-
-> **重要**：API 后端会**自动**从 HTML 的 `<meta>` 标签中读取 `company_name`、`competitors`、`products`、`regions`、`sister_parents` 等字段，并自动完成行业关联（`report_industries`）、国家关联（`report_countries`）、实体图谱建边（`relations`）等全套图谱数据写入。
-
-#### 4.3 结果校验与清理
-
-- **HTTP 200 且 `success: true`**：在最终回复中输出：
-  ```
-  [GTB 平台上传] 成功 ✓  端点: {使用的端点}  报告 ID: {id}
-  ```
-- **HTTP 非200 或网络异常**：打印错误信息，提示用户手动登录后台上传，**不得因上传失败中断整体任务**。
-- 上传完成后立即删除本次生成的临时 Python 上传脚本（若有），保持工作目录整洁。
 
 ---
 

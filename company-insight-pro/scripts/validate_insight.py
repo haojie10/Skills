@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-company-insight-pro 自动化报告合规与图表自检脚本
+company-insight-pro 自动化报告合规与图表自检脚本（含 Node.js JS 真实语法解析）
 """
 import os
 import re
 import sys
+import subprocess
+import tempfile
 
 # 54个GTB标准行业名称名称列表
 STANDARD_CATEGORIES = {
@@ -27,6 +29,28 @@ REQUIRED_METAS = [
     "sister_parents"
 ]
 
+def check_js_syntax(script_content):
+    """使用 node -c 严密校验 JavaScript 代码块是否存在语法错误"""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".js", delete=False, mode="w", encoding="utf-8") as tmp:
+            tmp_path = tmp.name
+            tmp.write(script_content)
+            
+        res = subprocess.run(["node", "-c", tmp_path], capture_output=True, text=True, encoding="utf-8", errors="ignore")
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+            
+        if res.returncode != 0:
+            return False, res.stderr.strip()
+        return True, ""
+    except Exception as e:
+        # 如果系统没装 node，退回到简易正则检查未转义单引号
+        lines = script_content.split("\n")
+        for line_no, line in enumerate(lines, 1):
+            if re.search(r"'[^'\\]*'[a-zA-Z0-9_\s\u4e00-\u9fa5]+[^'\\]*'", line):
+                return False, f"Line {line_no}: 怀疑未转义单引号在 JS 字符串中打破语法 -> {line.strip()}"
+        return True, ""
+
 def validate_html(html_path):
     print(f"[*] 开始审计报告: {html_path}")
     
@@ -43,7 +67,6 @@ def validate_html(html_path):
     print("[*] 正在审计 Meta 元数据...")
     meta_values = {}
     for meta in REQUIRED_METAS:
-        # 正则提取 <meta name="xxx" content="yyy"> 或 <meta name='xxx' content='yyy'>
         pattern = rf'<meta\s+[^>]*name=["\']{meta}["\']\s+content=["\']([^"\']*)["\']'
         match = re.search(pattern, content, re.IGNORECASE)
         if not match:
@@ -69,7 +92,7 @@ def validate_html(html_path):
                 print(f"  [ERROR] 品类 \"{p}\" 不符合 GTB 标准行业名称！请对照标准 54 个分类进行映射。")
                 success = False
                 
-    # 3. 审计 Emoji 净化（忽略 HTML 注释）
+    # 3. 审计 Emoji 净化
     print("[*] 正在审计正文及标题 Emoji 净化...")
     clean_content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
     emoji_pattern = re.compile(r'[\U00010000-\U0010ffff]')
@@ -79,9 +102,20 @@ def validate_html(html_path):
     else:
         print("  [OK] 未发现正文 Emoji 标识。")
         
-    # 4. 审计 ECharts 完整渲染契约 (DOM 与 JS 映射审计)
-    print("[*] 正在审计 ECharts 完整渲染与短路初始化检测...")
+    # 4. 审计 ECharts DOM 绑定与 JS 真实语法解析 (Node.js Syntax Audit)
+    print("[*] 正在审计 ECharts DOM 节点与 JavaScript 真实语法合规...")
     
+    # 抽取 <script> 代码块
+    script_blocks = re.findall(r'<script>(.*?)</script>', content, re.DOTALL)
+    for idx, script in enumerate(script_blocks):
+        js_ok, js_err = check_js_syntax(script)
+        if not js_ok:
+            print(f"  [ERROR] 🚨 <script> 代码块 #{idx+1} 包含真实的 JavaScript SyntaxError（如未转义的单引号打破 JS 字符串）！会导致浏览器脚本崩溃从而无法显示图表！")
+            print(f"          错误细节: {js_err}")
+            success = False
+        else:
+            print(f"  [OK] <script> 代码块 #{idx+1} 语法完全正确。")
+
     dom_ids = []
     pattern_dom1 = re.compile(r'<div[^>]+id=["\']([^"\']+)["\'][^>]+class=["\'][^"\']*chart-container[^"\']*["\']')
     pattern_dom2 = re.compile(r'<div[^>]+class=["\'][^"\']*chart-container[^"\']*["\'][^>]+id=["\']([^"\']+)["\']')
@@ -97,7 +131,7 @@ def validate_html(html_path):
     for chart_id in dom_ids:
         ref_pattern_single = rf"getElementById\(['\"]{chart_id}['\"]\)"
         if not re.search(ref_pattern_single, content):
-            print(f"  [ERROR] 图表 DOM 节点 id=\"{chart_id}\" 存在，但在 JS 代码中未发现独立引用或初始化（可能被逻辑短路如 || 跳过，或未编写对应的 echarts.init 代码）！")
+            print(f"  [ERROR] 图表 DOM 节点 id=\"{chart_id}\" 存在，但在 JS 代码中未发现独立引用或初始化！")
             success = False
         else:
             print(f"  [OK] 图表 id=\"{chart_id}\" 成功在 JS 中被独立获取并绑定。")
@@ -116,7 +150,7 @@ def validate_html(html_path):
         print("[SUCCESS] 报告校验完全合格！")
         return True
     else:
-        print("[FAIL] 报告中存在合规项错误，请按上方报错信息修改 HTML 文件。")
+        print("[FAIL] 报告中存在合规项或 JS 语法错误，请按上方报错信息修改 HTML 文件。")
         return False
 
 if __name__ == "__main__":
