@@ -27,6 +27,21 @@ def load_env(env_path):
                 env_vars[key.strip()] = val.strip()
     return env_vars
 
+def find_and_load_env():
+    cur = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(os.getcwd(), '.env'),
+        r"d:\我的APP\Globaltradebuddy\.env"
+    ]
+    for _ in range(5):
+        candidates.append(os.path.join(cur, '.env'))
+        cur = os.path.dirname(cur)
+        
+    for p in candidates:
+        if os.path.exists(p):
+            return load_env(p)
+    return {}
+
 def extract_meta(html, name):
     match = re.search(r'<meta[^>]*?name=["\']{}["\'][^>]*?content=["\']([^"\']*)["\']'.format(name), html, re.IGNORECASE)
     if match:
@@ -42,10 +57,9 @@ def publish_report_file(html_path, target_url=None, api_key=None):
         return False
 
     # 读取环境变量
-    env_path = r"d:\我的APP\Globaltradebuddy\.env"
-    env_vars = load_env(env_path)
+    env_vars = find_and_load_env()
     
-    gtb_api_url = target_url or env_vars.get('GTB_API_URL', 'https://globaltradebuddy.vercel.app')
+    gtb_api_url = target_url or env_vars.get('GTB_API_URL', 'http://124.222.201.143:3000')
     agent_api_key = api_key or env_vars.get('AGENT_API_KEY', 'automation_agent_secret')
 
     with open(html_path, 'r', encoding='utf-8') as f:
