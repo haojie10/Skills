@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Market Graphic / Company Insight Pro Report Publisher
-自动将 Base64 嵌入完成的自包含 HTML 企业战略情报报告上传并发布至 GlobalTradeBuddy 平台。
+Market Graphic / Category Insight Report Publisher
+自动将 Base64 嵌入完成的自包含 HTML 洞察报告上传并发布至 GlobalTradeBuddy 平台。
 """
 
 import os
@@ -27,21 +27,6 @@ def load_env(env_path):
                 env_vars[key.strip()] = val.strip()
     return env_vars
 
-def find_and_load_env():
-    cur = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(os.getcwd(), '.env'),
-        r"d:\我的APP\Globaltradebuddy\.env"
-    ]
-    for _ in range(5):
-        candidates.append(os.path.join(cur, '.env'))
-        cur = os.path.dirname(cur)
-        
-    for p in candidates:
-        if os.path.exists(p):
-            return load_env(p)
-    return {}
-
 def extract_meta(html, name):
     match = re.search(r'<meta[^>]*?name=["\']{}["\'][^>]*?content=["\']([^"\']*)["\']'.format(name), html, re.IGNORECASE)
     if match:
@@ -57,7 +42,8 @@ def publish_report_file(html_path, target_url=None, api_key=None):
         return False
 
     # 读取环境变量
-    env_vars = find_and_load_env()
+    env_path = r"d:\我的APP\Globaltradebuddy\.env"
+    env_vars = load_env(env_path)
     
     gtb_api_url = target_url or env_vars.get('GTB_API_URL', 'https://marketgraphic.cn')
     agent_api_key = api_key or env_vars.get('AGENT_API_KEY', 'automation_agent_secret')
@@ -66,12 +52,11 @@ def publish_report_file(html_path, target_url=None, api_key=None):
         html_content = f.read()
 
     title_match = re.search(r'<title>([\s\S]*?)</title>', html_content, re.IGNORECASE)
-    title = title_match.group(1).strip() if title_match else "未命名企业战略情报报告"
+    title = title_match.group(1).strip() if title_match else "未命名品类洞察报告"
 
     summary = extract_meta(html_content, 'summary')
     regions = extract_meta(html_content, 'regions')
     products = extract_meta(html_content, 'products')
-    company_name = extract_meta(html_content, 'company_name')
 
     # 尝试进行 GTB 标准行业品类自动校验与校正
     try:
@@ -82,6 +67,7 @@ def publish_report_file(html_path, target_url=None, api_key=None):
             df = pd.read_excel(excel_path)
             valid_set = set(df['行业名称 (Category CN)'].dropna().astype(str).str.strip())
             
+            # 校验 products
             prod_list = [p.strip() for p in products.split(',') if p.strip()]
             corrected_prods = []
             has_changed = False
@@ -113,7 +99,7 @@ def publish_report_file(html_path, target_url=None, api_key=None):
         "region": regions.split(',')[0].strip() if regions else "全球",
         "country": regions if regions else "全球",
         "industry": products.split(',')[0].strip() if products else "综合品类",
-        "tags": [p.strip() for p in products.split(',')] if products else ["企业洞察"]
+        "tags": [p.strip() for p in products.split(',')] if products else ["品类洞察"]
     }
 
     endpoint = f"{gtb_api_url.rstrip('/')}/api/agent/publish"
@@ -129,10 +115,11 @@ def publish_report_file(html_path, target_url=None, api_key=None):
         method='POST'
     )
 
-    print(f"[INFO] Publishing company insight report: {os.path.basename(html_path)}")
+    print(f"[INFO] Publishing report: {os.path.basename(html_path)}")
     print(f"[INFO] Target endpoint: {endpoint}")
-    print(f"[INFO] Company: {company_name or 'N/A'}, Title: {title}")
+    print(f"[INFO] Title: {title}")
 
+    # 先发往默认 API URL
     try:
         with urllib.request.urlopen(req, timeout=90) as response:
             res_body = response.read().decode('utf-8')
@@ -145,6 +132,7 @@ def publish_report_file(html_path, target_url=None, api_key=None):
     except Exception as e:
         print(f"[ERR] Network/Upload Error: {str(e)}")
 
+    # 如果远程失败，降级重试 localhost:3000
     if gtb_api_url != "http://localhost:3000":
         local_endpoint = "http://localhost:3000/api/agent/publish"
         print(f"[RETRY] Trying local endpoint: {local_endpoint}")
@@ -172,8 +160,8 @@ def main():
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
 
-    parser = argparse.ArgumentParser(description="Upload and publish company insight HTML report to GlobalTradeBuddy platform.")
-    parser.add_argument("html_path", help="Path to the generated HTML report file.")
+    parser = argparse.ArgumentParser(description="Upload and publish category insight HTML report to GlobalTradeBuddy platform.")
+    parser.add_argument("html_path", help="Path to the generated自包含 HTML report file.")
     parser.add_argument("--url", help="Target API URL (optional)")
     parser.add_argument("--key", help="Agent API Key (optional)")
 
