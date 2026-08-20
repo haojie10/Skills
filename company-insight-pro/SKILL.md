@@ -3,19 +3,28 @@ name: company-insight-pro
 description: 360度企业战略情报洞察工具。用于为特定企业生成深度战略情报报告，涵盖财务穿透、组织架构、采购逻辑、用户舆情及出口准入合规性分析。当用户需要调研潜在海外客户、竞争对手或合作伙伴时触发。
 ---
 
-# Company Insight Pro（360度企业洞察）
+# Company Insight Pro (360° 企业战略情报洞察)
 
-本技能用于生成专业、深度且具交互性的企业战略情报报告。它模仿顶尖咨询公司的逻辑，为中国出口企业提供一站式的"知己知彼"决策支持。
+本技能用于对全球任意企业（尤其是大型零售商、品牌商、供应链巨头）进行 360 度多维度的商业与战略情报穿透，并生成一份高颜值、交互式、自包含的 HTML 战略情报报告，并自动上传发布至 GlobalTradeBuddy 平台。
 
-## 核心能力
+## 工作流与执行步骤
 
-1. **千字级企业深度画像**：深度解构企业的历史演进、核心基因与当前战略重点。
-2. **财务穿透分析**：不仅列出最新全年销售额（营业额），更分析利润率变动、投资去向及潜在风险。
-3. **决策链与采购实体解构**：从 C 级高管、亚洲采购代表处（在华注册采购实体）到执行层品类经理的职能分工、权责及对接通道分析。
-4. **采购、竞争与合规深度报告**：涵盖非食品采购规模、主要市场竞争对手格局（横向竞品分析）、供应商布局、合规红线（德国供应链法、欧盟禁伐令、BSCI、法国 AGEC 法案等）等。
-5. **用户舆情与产品建议**：整合真实用户评价，转化为供应商的产品优化建议。
+### 0. 前置查重拦截（强制执行，避免重复生成）
 
-## 执行工作流
+在启动深度全网搜索和报告撰写之前，**必须先检查平台是否已有该企业的情报研报**：
+1. 运行查重脚本（或调用 API）：
+   ```bash
+   python bin/check_report.py --company "目标公司/品牌名 (如: Action, Screwfix, Auchan)"
+   ```
+2. **判断逻辑**：
+   - **若已存在相关报告**：脚本会输出匹配报告的【报告 ID】、【标准主体名】、【标题】与【查看链接】。立即向用户汇报已有报告详情，并询问：
+     > *“平台报告大厅中已收录《[报告标题]》（报告 ID：`[report_id]`，查看链接：[url]）。请问您是直接查阅现有报告，还是需要基于最新数据重新生成并覆盖更新？”*
+     - 若用户指示仅需查阅，则直接结束，无需重复消耗 Token；
+     - **若用户明确要求重新生成并覆盖更新**：**必须记录该已有报告的 `[report_id]` 与 `[标准主体名]`**，在生成 HTML 时：
+       ① 沿用该标准主体名作为 `<meta name="company_name">`；
+       ② 在 HTML `<head>` 中注入 `<meta name="target_report_id" content="[report_id]">`；
+       ③ 发布时使用 `--target-id [report_id]` 强制执行原地更新覆盖，保证原有报告 URL 和已解锁状态不变。
+   - **若不存在该报告**：直接进入下一步开始深度调研（新建模式）。
 
 ### 1. 深度调研阶段
 
@@ -56,43 +65,23 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
   ```
 
   **实体名称规范化（强制要求）：**
-  - `competitors`、`channels`、`suppliers`、`customers`、`sister_parents` 这五个实体类 meta 标签中的所有公司名称必须使用**简称**，去除法律形式后缀（GmbH, AG, Ltd., Inc., S.A., S.p.A., B.V., N.V., Co., Corp. 等）。
-  - 示例：`Paulmann Licht GmbH` → `Paulmann`、`Ledvance GmbH` → `Ledvance`、`Signify Philips Hue` → `Signify`。
-  - **无真实数据则留空（强制要求）**：如果某字段无法通过公开信息查证到真实的公司名称，该字段必须设为空值 `content=""`，**严禁**填入产业集群描述（如"中国广东照明产业集群"）、地域泛称（如"欧洲家具与建材连锁"）、渠道类型描述（如"OEM/ODM中国工厂"）等非公司实体的描述性文字。
+  - 所有实体名称（包括公司主名、供应商、买方客户、竞争对手、姐妹公司）**一律必须去除法律后缀**（如 `AG`, `GmbH`, `LLC`, `Inc`, `Ltd`, `Co., Ltd.`, `PLC`, `SA`, `SAS`, `BV`, `SE` 等），仅保留干净的商业主体名称（如 `BAUHAUS AG` → `BAUHAUS`，`Fiskars Brands Inc.` → `Fiskars`）。
 
   **产品品类命名规范（强制要求）：**
   - `products` meta 标签中的品类名称以及报告正文中所有产品/品类的描述，**必须严格对齐** `C:/Users/066/.gemini/config/skills/company-insight-pro/references/GTB产品结构.xlsx`（本 Skill 自带）中的**54个标准行业名称**（即「行业名称 (Category CN)」列）。
   - 禁止使用自定义的品类简称（如"日用百货""服装鞋帽""家装维修"），必须分别替换为标准名称（如"家居用品""男女装/童装/内衣/鞋""五金/工具/建筑及装饰材料"）。
-  - 映射步骤：分析目标企业的业务后 → 对照 `C:/Users/066/.gemini/config/skills/company-insight-pro/references/GTB产品结构.xlsx` 的54个品类逐一匹配 → 仅输出匹配到的标准品类名称 → 填入 `products` meta 及报告全文。
-  - 示例对照：
-    | 自定义名称（禁止） | GTB标准名称（必须使用） |
-    |---|---|
-    | 日用百货 | 家居用品 |
-    | 服装鞋帽 | 男女装, 童装, 内衣, 鞋, 服装饰物及配件 |
-    | 家装维修 | 五金, 工具, 建筑及装饰材料 |
-    | 儿童玩具 | 玩具 |
-    | 运动休闲 | 体育及旅游休闲用品 |
-    | 文具 | 办公文具 |
-    | 园艺用具 | 园林用品 |
-    | 家居布艺 | 家用纺织品 |
-    | 婴童用品 | 孕婴童用品 |
-    | 有机食品/植物蛋白食品 | 食品 |
 
-- **UI 规范强制对齐**：报告设计必须严格遵守 [ui-spec.md](references/ui-spec.md) 中的规范。在编码 HTML 之前，**必须先完整阅读并理解 ui-spec.md**，确保：
+- **UI 规范强制对齐**：报告设计必须严格遵守 [ui-spec.md](references/ui-spec.md) 中的规范。
   1. **色彩体系**：使用暖沙乳白 `#fdfbf7` 为主背景、暖橘 `#ff641e` 为焦点色，禁用高饱和度红绿蓝紫。
   2. **字体排版**：使用系统无衬线字体，大标题 1.25rem/400，正文 0.85~0.95rem/400。
   3. **圆角与阴影**：主卡片 22px、子容器 14~16px、标签 12px，阴影使用暖沙色系 rgba。
   4. **标签净化**：关联实体标签统一使用 `.report-tag` 轻沙配色，禁用彩色胶囊标签。
   5. **无 Emoji**：禁止任何 Emoji，使用 Feather Icons 风格 SVG 替代。
   6. **按钮样式**：使用 `.sand-btn` 水滴按钮样式。
-- **交互式报告生成与本地存储规范（强制要求）**：
-  1. 使用 [报告模板 HTML](assets/report-template.html) 作为基础，并完整配置变量占位符 `{{CHART1_OPTION}}`、`{{CHART2_OPTION}}` 与 `{{CHART3_OPTION}}`。
-  2. **本地存储路径规范**：所有生成的企业洞察报告统一保存在项目根目录下的 **`report/Company Insight/`** 文件夹中（若该文件夹不存在，必须先执行 `mkdir -p "report/Company Insight"` 自动创建）。
-  3. 最终 HTML 报告必须直接输出至该文件夹中，禁止散落在项目根目录或临时目录。
 - **可视化要求**：必须使用 **ECharts** 实现至少两个（推荐三个）交互式图表。
 - **图像处理与门店横幅（强制要求）**：
-  1. 对于拥有实体门店的渠道商/零售商，报告顶部标题处必须附带一张高质量的实体门店横幅大图（建议使用横屏 21:9 比例的建筑摄影格式），呈现类似于 `ica_insight_report` 的研报横幅风格。
-  2. **标志真实一致性**：门店图片上的企业品牌标志、名称、颜色及特有外文标识（如希伯来文、瑞典文等标语）**必须与谷歌地图或官网中的真实店面及招牌完全一致**，严禁出现拼写错误或虚假的 AI 幻觉标志，必要时须根据真实店面照片进行精确绘图或图像重构。
+  1. 对于拥有实体门店的渠道商/零售商，报告顶部标题处必须附带一张高质量的实体门店横幅大图（建议使用横屏 21:9 比例的建筑摄影格式）。
+  2. **标志真实一致性**：门店图片上的企业品牌标志、名称、颜色及特有外文标识必须与官网或街景中的真实店面及招牌完全一致。
   3. **自包含嵌入**：该图像一律通过 Base64 编码直接嵌入 HTML 模板中，禁止采用任何外部物理链接或相对路径。
 
 ### 4. 自动上传到 Globaltradebuddy 平台（强制执行）
@@ -101,16 +90,20 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
 
 1. 使用 `run_command` 运行 `publish_report.py`：
 
-   ```bash
-   python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html>
-   ```
+   - **新建模式**（此前无此报告）：
+     ```bash
+     python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html>
+     ```
+   - **覆盖更新模式**（此前已有报告并明确更新）：
+     ```bash
+     python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html> --target-id <已有报告ID>
+     ```
 
 2. **自动发布与真实 ID 校验逻辑（强制要求）**：
    - 该脚本会自动读取 `.env` 中的 `GTB_API_URL` 配置（默认为 `https://marketgraphic.cn`）及 `AGENT_API_KEY`。
-   - 解析 HTML 中的 `<meta>` 标签（`company_name`, `summary`, `regions`, `products` 等）并校验标准品类名。
-   - 向 `/api/agent/publish` 发送 POST 请求。
+   - 解析 HTML 中的 `<meta>` 标签（`company_name`, `summary`, `regions`, `products`, `target_report_id` 等）并校验标准品类名。
+   - 向 `/api/agent/publish` 发送 POST 请求。若指定了 `target_report_id`，后端将强制就地执行 `UPDATE` 原报告，保留原有 ID 和解锁状态。
    - **严格禁止预先捏造/猜想 UUID**：终端打印 `[OK] Report published successfully! ID: <真实UUID>`，必须严格以控制台返回的真实 ID 为准。
-   - **强制探活校验（Verification Before Completion）**：在宣称完成或调用 `PATCH /api/agent/custom-requests` 之前，必须先使用 `curl` 探活 `GET https://marketgraphic.cn/reports/<真实UUID>` 并确认返回 `HTTP 200 OK`，之后方可将任务更新为 `completed`。
 
 ---
 
@@ -119,12 +112,10 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
 - **无捏造原则**：联系人邮箱等私密信息如无法获取，必须标注为"无公开信息"，严禁捏造。
 - **深度性**：概览模块必须达到 1000 字左右的深度分析，而非简单的列表。
 - **落地性**：报告的最后一章必须提供"针对中国供应商的实战建议"。
-- **品类名称标准化**：报告全文（包括 meta 标签、ECharts 图表标签、品牌矩阵表格、策略建议）中所有产品/品类名称必须使用 `references/GTB产品结构.xlsx` 中的54个标准行业名称（即「行业名称 (Category CN)」列），严禁自创品类名。
-- **图表完整渲染契约**：所有在 HTML 中声明了 `class="chart-container"` 且有 ID 的 `div` 占位，在 JS 中必须有独立对应的 `echarts.init()` 初始化及 `setOption` 渲染逻辑。禁止使用逻辑或（`||`）进行图表 DOM 短路式合并初始化，防止在页面上留下空白的图表卡片。
-- **自动化自检**：报告生成并保存后，**必须**运行 `scripts/validate_insight.py` 对生成的 HTML 报告进行合规审计，确保满足 meta 标签完整度、标准品类映射、Emoji 净化及图表无短路渲染的质量约束。
-- **自包含与规范存储（强制要求）**：
+- **品类名称标准化**：报告全文（包括 meta 标签、ECharts 图表标签、品牌矩阵表格、策略建议）中所有产品/品类名称必须使用 `references/GTB产品结构.xlsx` 中的54个标准行业名称。
+- **图表完整渲染契约**：所有在 HTML 中声明了 `class="chart-container"` 且有 ID 的 `div` 占位，在 JS 中必须有独立对应的 `echarts.init()` 初始化及 `setOption` 渲染逻辑。
+- **自动化自检**：报告生成并保存后，**必须**运行 `scripts/validate_insight.py` 对生成的 HTML 报告进行合规审计。
+- **自包含与清理（强制要求）**：
   1. 报告必须是**单文件 HTML**（图像 Base64 嵌入）。
-  2. 报告必须保存在 **`report/Company Insight/`** 目录中，若目录不存在则自动创建。
-  3. 任务结束前，**必须删除**所有过程中产生的临时图片、脚本及中间文件，仅在 `report/Company Insight/` 下保留最终的自包含 HTML 报告。
+  2. 任务结束前，**必须删除**所有过程中产生的临时图片、脚本及中间文件，仅保留最终的 HTML 报告。
 - **无需浏览器验证**：报告生成并保存后即可视为任务完成，**禁止**自动调用浏览器工具进行视觉验证。
-- **上传与探活校验**：平台上传步骤必须在本地合规自检通过后才能执行，且必须通过 HTTP 200 探活验证后方可反馈 Report ID 并触发完成。
