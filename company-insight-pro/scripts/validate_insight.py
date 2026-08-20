@@ -8,6 +8,9 @@ import sys
 import subprocess
 import tempfile
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 # 54个GTB标准行业名称名称列表
 STANDARD_CATEGORIES = {
     "办公文具", "保暖用品", "包装用品", "餐厨器皿", "宠物用品",
@@ -53,7 +56,6 @@ def check_js_syntax(script_content):
             return False, res.stderr.strip()
         return True, ""
     except Exception as e:
-        # 如果系统没装 node，退回到简易正则检查未转义单引号
         lines = script_content.split("\n")
         for line_no, line in enumerate(lines, 1):
             if re.search(r"'[^'\\]*'[a-zA-Z0-9_\s\u4e00-\u9fa5]+[^'\\]*'", line):
@@ -115,12 +117,11 @@ def validate_html(html_path):
     # 4. 审计 ECharts DOM 绑定与 JS 真实语法解析 (Node.js Syntax Audit)
     print("[*] 正在审计 ECharts DOM 节点与 JavaScript 真实语法合规...")
     
-    # 抽取 <script> 代码块
     script_blocks = re.findall(r'<script>(.*?)</script>', content, re.DOTALL)
     for idx, script in enumerate(script_blocks):
         js_ok, js_err = check_js_syntax(script)
         if not js_ok:
-            print(f"  [ERROR] 🚨 <script> 代码块 #{idx+1} 包含真实的 JavaScript SyntaxError（如未转义的单引号打破 JS 字符串）！会导致浏览器脚本崩溃从而无法显示图表！")
+            print(f"  [ERROR] 🚨 <script> 代码块 #{idx+1} 包含真实的 JavaScript SyntaxError！")
             print(f"          错误细节: {js_err}")
             success = False
         else:
@@ -138,7 +139,6 @@ def validate_html(html_path):
             
     print(f"  已检测到的图表容器 DOM 节点: {dom_ids}")
     
-    # 校验每个图表是否有独立 init
     for chart_id in dom_ids:
         ref_pattern_single = rf"getElementById\(['\"]{chart_id}['\"]\)"
         if not re.search(ref_pattern_single, content):
