@@ -17,6 +17,17 @@ description: 移植并强化自 Company Insight Pro 的 360 度买家与企业�
 
 ## 执行工作流
 
+### 0. 前置查重硬门禁（Hard Gate 0 · 强制最高优先级阻断）
+在启动调研、生图或报告生成前，**必须首先运行查重脚本**：
+```bash
+python D:/Workbuddy工作文件夹内/客户洞察/bin/check_report.py --company "目标公司名称"
+```
+🚨 **【查重命中硬阻断铁律】：**
+- 若脚本返回 `[发现重复/已存在]`：
+  1. **必须立即停止一切后续工具调用（严禁生图或搜索）**；
+  2. 立即向用户汇报已有报告详情（标题、Report ID、链接），并停下来询问用户是【直接查阅/跳过】还是【重新生成并覆盖更新】；
+  3. 若用户明确要求覆盖更新，则提取 `target_report_id` 并在生成 HTML 时注入 `<meta name="target_report_id" content="...">`，上传时使用 `--target-id` 原地覆盖。
+
 ### 1. 深度调研阶段
 - **全网搜索**：使用 `search_web` 或 `read_url_content` 搜索目标公司的最新财报、官网新闻、行业研报、亚洲/中国采购代表处及竞争对手。
 - **合规与财务**：关注最新财年的营业额、EBITDA，以及 SMETA、BSCI、EcoVadis、法国 AGEC 法案等合规门槛。
