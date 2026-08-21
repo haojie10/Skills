@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-company-insight-pro 自动化报告合规与图表自检脚本（含 Node.js JS 真实语法解析）
+company-insight-pro 自动化报告合规与图表自检脚本（含 Node.js JS 真实语法解析与品牌母版规范门禁）
 """
 import os
 import re
@@ -114,7 +114,28 @@ def validate_html(html_path):
     else:
         print("  [OK] 未发现正文 Emoji 标识。")
         
-    # 4. 审计 ECharts DOM 绑定与 JS 真实语法解析 (Node.js Syntax Audit)
+    # 4. 审计 Market Graphic 官方品牌 Logo 与 Header 规范（硬性门禁）
+    print("[*] 正在审计 Market Graphic 官方品牌 Logo 与 Header 规范...")
+    has_powered_by = bool(re.search(r'Powered\s+by', content, re.IGNORECASE))
+    has_mg_logo = bool(re.search(r'alt=["\']Market\s+Graphic["\']', content, re.IGNORECASE) or "iVBORw0KGgoAAAANSUhEUgAAAHAAAABACAYAAADCmvPm" in content)
+    
+    if has_powered_by and has_mg_logo:
+        print("  [OK] 检出 Header 顶部 Market Graphic 官方 Logo 及 Powered by 标识。")
+    else:
+        print("  [ERROR] 🚨 缺失 Market Graphic 官方 Logo 图片或 Powered by 标示！")
+        print("          必须直接读取 assets/report-template.html 作为基底模板进行填充，不得擅自删除或手写骨架！")
+        success = False
+
+    # 5. 审计 页脚官网超链接 (Footer)
+    print("[*] 正在审计页脚官网超链接与生成声明...")
+    has_footer_link = bool(re.search(r'href=["\']https?://(?:www\.)?marketgraphic\.cn["\']', content, re.IGNORECASE) or "marketgraphic.cn" in content)
+    if has_footer_link:
+        print("  [OK] 检出 Footer 底部 marketgraphic.cn 官方超链接。")
+    else:
+        print("  [ERROR] 🚨 缺失 Footer 底部官方链接 <a href=\"https://marketgraphic.cn\" ...>www.marketgraphic.cn</a>！")
+        success = False
+
+    # 6. 审计 ECharts DOM 绑定与 JS 真实语法解析 (Node.js Syntax Audit)
     print("[*] 正在审计 ECharts DOM 节点与 JavaScript 真实语法合规...")
     
     script_blocks = re.findall(r'<script>(.*?)</script>', content, re.DOTALL)
@@ -147,7 +168,7 @@ def validate_html(html_path):
         else:
             print(f"  [OK] 图表 id=\"{chart_id}\" 成功在 JS 中被独立获取并绑定。")
             
-    # 5. 审计占位符未替换残留
+    # 7. 审计占位符未替换残留
     print("[*] 正在审计模板占位符残留...")
     placeholders = re.findall(r'\{\{[A-Z0-9_]+\}\}', content)
     if placeholders:
@@ -161,7 +182,7 @@ def validate_html(html_path):
         print("[SUCCESS] 报告校验完全合格！")
         return True
     else:
-        print("[FAIL] 报告中存在合规项或 JS 语法错误，请按上方报错信息修改 HTML 文件。")
+        print("[FAIL] 报告中存在合规项、品牌规范缺失或 JS 语法错误，请按上方报错信息修改 HTML 文件。")
         return False
 
 if __name__ == "__main__":

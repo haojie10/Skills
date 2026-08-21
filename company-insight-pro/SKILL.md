@@ -45,7 +45,11 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
 - **用户舆情**：用户之声与产品改进方向。
 - **痛点与战略**：企业痛点与供应商实战建议。
 
-### 3. 交互式报告生成
+### 3. 交互式报告生成（强制基于母版填充）
+
+> 🚨 **【最高执行铁律：严禁从零编写 HTML 骨架】**
+> 生成报告时，**必须首先读取 `C:/Users/066/.gemini/config/skills/company-insight-pro/assets/report-template.html`** 作为唯一的 HTML 代码基底！
+> 必须完整保留母版中已预置的 **Market Graphic 官方 Base64 Logo**（位于 Header 右上角）、Header 吸顶布局、**8 大板块排版结构** 以及 Footer 底部的 **`www.marketgraphic.cn` 官方超链接**！仅将调研提取的业务数据替换填充进对应的槽位与 DOM 容器中。
 
 - **元数据注入（强制要求）**：生成的 HTML 文档 `<head>` 区域必须注入以下精确的 `<meta>` 标签（多值标签使用英文半角逗号 `,` 分割）：
 
@@ -76,7 +80,7 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
   2. **字体排版**：使用系统无衬线字体，大标题 1.25rem/400，正文 0.85~0.95rem/400。
   3. **圆角与阴影**：主卡片 22px、子容器 14~16px、标签 12px，阴影使用暖沙色系 rgba。
   4. **标签净化**：关联实体标签统一使用 `.report-tag` 轻沙配色，禁用彩色胶囊标签。
-  5. **无 Emoji**：禁止任何 Emoji，使用 Feather Icons 风格 SVG 替代。
+  5. **无 Emoji**：禁止任何 Emoji，使用 Feather/Lucide Icons 风格 SVG 替代。
   6. **按钮样式**：使用 `.sand-btn` 水滴按钮样式。
 - **可视化要求**：必须使用 **ECharts** 实现至少两个（推荐三个）交互式图表。
 - **图像处理与门店横幅（强制要求）**：
@@ -84,12 +88,17 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
   2. **标志真实一致性**：门店图片上的企业品牌标志、名称、颜色及特有外文标识必须与官网或街景中的真实店面及招牌完全一致。
   3. **自包含嵌入**：该图像一律通过 Base64 编码直接嵌入 HTML 模板中，禁止采用任何外部物理链接或相对路径。
 
-### 4. 自动上传到 Globaltradebuddy 平台（强制执行）
+### 4. 自动化校验与平台发布（强制门禁）
 
-报告生成并通过本地自检后，**必须立即调用本技能自带的发布脚本，将生成的自包含 HTML 报告自动推送上传至平台**：
+报告生成并保存后，**必须先执行校验脚本；只有在校验完全通过后，才允许调用发布脚本**：
 
-1. 使用 `run_command` 运行 `publish_report.py`：
+1. **执行自动化合规与品牌门禁校验（强制执行）**：
+   ```bash
+   python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/validate_insight.py <path/to/your/generated/html>
+   ```
+   *该脚本将严格审计：Meta 元数据完整性、54 个标准品类对齐、无 Emoji 净化、ECharts 真实 JS 语法解析、**Market Graphic 官方 Base64 Logo 存在性** 及 **Footer 底部官网链接**。若有任何一项不达标将直接中断阻断发布。*
 
+2. **调用发布脚本上传至平台**：
    - **新建模式**（此前无此报告）：
      ```bash
      python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html>
@@ -99,23 +108,17 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
      python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html> --target-id <已有报告ID>
      ```
 
-2. **自动发布与真实 ID 校验逻辑（强制要求）**：
-   - 该脚本会自动读取 `.env` 中的 `GTB_API_URL` 配置（默认为 `https://marketgraphic.cn`）及 `AGENT_API_KEY`。
-   - 解析 HTML 中的 `<meta>` 标签（`company_name`, `summary`, `regions`, `products`, `target_report_id` 等）并校验标准品类名。
-   - 向 `/api/agent/publish` 发送 POST 请求。若指定了 `target_report_id`，后端将强制就地执行 `UPDATE` 原报告，保留原有 ID 和解锁状态。
-   - **严格禁止预先捏造/猜想 UUID**：终端打印 `[OK] Report published successfully! ID: <真实UUID>`，必须严格以控制台返回的真实 ID 为准。
-
 ---
 
 ## 质量标准
 
+- **母版继承原则（强制）**：必须以 `assets/report-template.html` 为唯一母版，严禁私自手写 HTML 框架。
 - **无捏造原则**：联系人邮箱等私密信息如无法获取，必须标注为"无公开信息"，严禁捏造。
 - **深度性**：概览模块必须达到 1000 字左右的深度分析，而非简单的列表。
 - **落地性**：报告的最后一章必须提供"针对中国供应商的实战建议"。
 - **品类名称标准化**：报告全文（包括 meta 标签、ECharts 图表标签、品牌矩阵表格、策略建议）中所有产品/品类名称必须使用 `references/GTB产品结构.xlsx` 中的54个标准行业名称。
 - **图表完整渲染契约**：所有在 HTML 中声明了 `class="chart-container"` 且有 ID 的 `div` 占位，在 JS 中必须有独立对应的 `echarts.init()` 初始化及 `setOption` 渲染逻辑。
-- **自动化自检**：报告生成并保存后，**必须**运行 `scripts/validate_insight.py` 对生成的 HTML 报告进行合规审计。
 - **自包含与清理（强制要求）**：
   1. 报告必须是**单文件 HTML**（图像 Base64 嵌入）。
   2. 任务结束前，**必须删除**所有过程中产生的临时图片、脚本及中间文件，仅保留最终的 HTML 报告。
-- **无需浏览器验证**：报告生成并保存后即可视为任务完成，**禁止**自动调用浏览器工具进行视觉验证。
+- **无需浏览器验证**：报告生成并通过 `validate_insight.py` 后即可发布，**禁止**自动调用浏览器工具进行视觉验证。
