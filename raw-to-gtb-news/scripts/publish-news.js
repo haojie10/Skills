@@ -12,16 +12,47 @@
  * 默认行为：发布成功的 JSON 会被自动删除（过程文件不残留）；发布失败的保留，
  * 以便修复后重试。传入 --keep 则全部保留。
  *
- * 环境变量(可选):
- *   GTB_API_URL   默认 http://124.222.201.143:3000
- *   AGENT_API_KEY 默认 automation_agent_secret
+ * 配置（必需，从项目根 .env 或环境变量读取，脚本不内置任何默认密钥）:
+ *   GTB_API_URL   GTB 平台地址，如 http://124.222.201.143:3000
+ *   AGENT_API_KEY 发布鉴权密钥（Bearer token）
+ * 缺少配置时脚本立即报错退出，不会静默使用默认值。
  */
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const https = require('https');
 
-const GTB_API_URL = process.env.GTB_API_URL || 'http://124.222.201.143:3000';
-const API_KEY = process.env.AGENT_API_KEY || 'automation_agent_secret';
+/** 从项目根 .env 加载配置（Node 20.12+ 内置 process.loadEnvFile，无第三方依赖；文件不存在则跳过） */
+function loadDotEnv() {
+  const candidates = [
+    path.join(__dirname, '..', '..', '..', '.env'), // 技能所在的项目根
+    path.resolve(process.cwd(), '.env')             // 当前运行目录
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      try {
+        process.loadEnvFile(p); // 已有的环境变量优先，不会被 .env 覆盖
+        return p;
+      } catch (e) {
+        console.warn(`⚠️  加载 ${p} 失败: ${e.message}`);
+      }
+    }
+  }
+  return null;
+}
+
+const envFile = loadDotEnv();
+if (envFile) console.log(`📄 已加载配置: ${envFile}`);
+
+const GTB_API_URL = process.env.GTB_API_URL;
+const API_KEY = process.env.AGENT_API_KEY;
+
+if (!GTB_API_URL || !API_KEY) {
+  console.error('❌ 缺少必要配置：GTB_API_URL 或 AGENT_API_KEY 未设置。');
+  console.error('   请在项目根目录创建 .env（可参考 .env.example），或在运行时注入环境变量：');
+  console.error('   GTB_API_URL="https://你的平台地址" AGENT_API_KEY="你的密钥" node publish-news.js <目录或JSON>');
+  process.exit(1);
+}
 
 /** 解析参数: 可能是目录或单个 JSON 文件 */
 function resolveTargets(argv) {
@@ -88,9 +119,11 @@ function postNews(item) {
     });
 
     const url = new URL(GTB_API_URL);
+    const isHttps = url.protocol === 'https:';
+    const requester = isHttps ? https : http;
     const options = {
       hostname: url.hostname,
-      port: url.port || 3000,
+      port: url.port || (isHttps ? 443 : 80),
       path: '/api/agent/publish',
       method: 'POST',
       headers: {
@@ -100,7 +133,7 @@ function postNews(item) {
       }
     };
 
-    const req = http.request(options, (res) => {
+    const req = requester.request(options, (res) => {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', c => body += c);
@@ -150,8 +183,13 @@ async function main() {
       await postNews(item);
       ok++;
       if (!keepFiles) {
-        fs.unlinkSync(f);
-        removed.push(path.basename(f));
+        try {
+          fs.unlinkSync(f);
+          removed.push(path.basename(f));
+        } catch (err) {
+          // 发布已成功，清理失败不算发布失败，仅提示手动删除
+          console.warn(`  ⚠️ 发布成功但清理失败（请手动删除）: ${path.basename(f)} — ${err.message}`);
+        }
       }
     } catch (err) {
       console.error(`  ❌ 发布失败: ${err.message}`);

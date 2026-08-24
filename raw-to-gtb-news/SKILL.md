@@ -51,7 +51,7 @@ description: 将外部收集的 raw 资讯素材（英文原文 / Obsidian clipp
 
 ### 第 2 步：抓取 og:image 配图
 ```bash
-node .codebuddy/skills/raw-to-gtb-news/scripts/fetch-og-image.js "<source_url>"
+node .workbuddy/skills/raw-to-gtb-news/scripts/fetch-og-image.js "<source_url>"
 ```
 - 若返回 `NOT_FOUND` 或请求被限流（429），回退使用素材正文中出现的真实图片 URL（如 WordPress `wp-content/uploads` 链接）。
 
@@ -59,12 +59,12 @@ node .codebuddy/skills/raw-to-gtb-news/scripts/fetch-og-image.js "<source_url>"
 - 按上述 JSON 结构，为每篇素材生成一条深度资讯。
 - `recap` / `takeaways` 必须满足字数红线。
 - `industries` 智能关联：零售巨头的战略级新闻可关联多个相关品类。
-- 存放目录：`/Users/jason/Documents/Antigravity/Project/Globaltradebuddy/news-pipeline/<YYYY-MM-DD>/`
+- 存放目录：`D:\Obsidian\个人笔记\news-pipeline\<YYYY-MM-DD>\`（或用工作区相对路径 `news-pipeline/<YYYY-MM-DD>/`）
 - **这些 JSON 是临时中间产物**：发布成功后将被脚本自动删除，执行完毕不残留冗余文件。若需要留档核对，可另行复制保存。
 
 ### 第 4 步：发布到平台
 ```bash
-node .codebuddy/skills/raw-to-gtb-news/scripts/publish-news.js news-pipeline/<YYYY-MM-DD>
+node .workbuddy/skills/raw-to-gtb-news/scripts/publish-news.js news-pipeline/<YYYY-MM-DD>
 ```
 - 脚本自动将 JSON 组装为平台 HTML（四段式结构 + 来源链接）并 POST 到 `/api/agent/publish`。
 - **默认自动清理**：发布成功的 JSON 会被立即删除；发布失败的保留以便修复后重试。
@@ -74,7 +74,7 @@ node .codebuddy/skills/raw-to-gtb-news/scripts/publish-news.js news-pipeline/<YY
 
 ### 第 5 步：验证
 ```bash
-curl -s "http://124.222.201.143:3000/api/news?pageSize=10"
+curl -s "$GTB_API_URL/api/news?pageSize=10"
 ```
 - 确认新发布的资讯出现在列表中（含标题、source_url、industries、countries、published_at）。
 
@@ -86,8 +86,8 @@ curl -s "http://124.222.201.143:3000/api/news?pageSize=10"
 ## 平台与发布规范
 
 - 发布接口、鉴权、请求体、双写逻辑等详细规范见 `references/gtb-news-api.md`。
-- 54 标准品类列表见项目 `.antigravity/skills/report-news/references/standard-categories.json`。
-- 平台地址与密钥：项目根 `.env` 中 `GTB_API_URL` 与 `AGENT_API_KEY`。
+- 54 标准品类列表见本技能 `references/standard-categories.json`（7 簇 54 类，来源：`haoiejie10/Global-Trade-Buddy` 仓库 `.antigravity/skills/report-news/references/standard-categories.json`）。
+- 平台地址与密钥（`GTB_API_URL` / `AGENT_API_KEY`）：**必需配置，脚本不内置默认密钥**。从项目根 `.env` 读取（参考 `.env.example`，已被 `.gitignore` 忽略）或运行时注入环境变量；缺失时脚本报错退出。
 
 ## 资源
 

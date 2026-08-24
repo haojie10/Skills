@@ -8,8 +8,8 @@ GlobalTradeBuddy 平台新闻（资讯）发布接口规范。对应代码：`pa
 POST {GTB_API_URL}/api/agent/publish
 ```
 
-- `GTB_API_URL` 见项目 `.env`，当前为 `http://124.222.201.143:3000`
-- 鉴权：`Authorization: Bearer {AGENT_API_KEY}`，密钥见 `.env` 中 `AGENT_API_KEY`
+- `GTB_API_URL` **必需**，从项目根 `.env` 读取（参考 `.env.example`）；示例值 `http://124.222.201.143:3000`
+- 鉴权：`Authorization: Bearer {AGENT_API_KEY}`，`AGENT_API_KEY` **必需**，从项目根 `.env` 读取，脚本不内置默认密钥
 - 请求体上限：20MB
 
 ## 请求体（type = "article"）
@@ -64,6 +64,6 @@ POST {GTB_API_URL}/api/agent/publish
 
 ## 标准品类映射
 
-54 个标准品类列表：`/Users/jason/Documents/Antigravity/Project/Globaltradebuddy/.antigravity/skills/report-news/references/standard-categories.json`
+54 个标准品类列表：`.workbuddy/skills/raw-to-gtb-news/references/standard-categories.json`（7 簇 54 类，来源：`haoiejie10/Global-Trade-Buddy` 仓库的 `report-news` 技能）。
 
 品类标签（`industries` / `tags.products`）必须严格使用该文件中的 54 个标准行业名称，禁止自创非标词。
