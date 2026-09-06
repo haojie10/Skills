@@ -9,7 +9,16 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
 
 ## 工作流与执行步骤
 
-### 0. 前置查重硬门禁（Hard Gate 0 · 强制最高优先级阻断）
+### 0. 任务认领与目标确定 (Task Claiming)
+- **从云端任务中心认领模式（当用户指令为“认领下一个客户”、“从任务中心调研”或指定序号区间时）**：
+  1. 🚨 **【禁止触碰本地文件】严禁读取或修改本地静态文件 `渠道地图调研清单.md` 或 `公司调研清单.md`**（以防止多机并发冲突与状态覆盖）。
+  2. **向云端任务中心原子认领任务**：
+     向 `https://marketgraphic.cn/api/agent/tasks/claim` 发起 POST 请求（Header: `Authorization: Bearer automation_agent_secret`，Body 可选 `worker_name`, `min_seq`, `max_seq`）。
+  3. 拿到返回的任务对象 `{ id, seq_no, company_name, country, website }`，以此作为调研目标主体，并记录其 `task_id = id`。
+- **直接指定公司名模式（用户直接输入具体公司名，如“调研 BAUHAUS”）**：
+  直接以此公司名称作为目标主体。
+
+### 1. 前置查重硬门禁（Hard Gate 0 · 强制最高优先级阻断）
 
 在启动深度全网搜索、调用生图工具或撰写报告之前，**必须首先运行查重脚本**：
 ```bash
@@ -77,8 +86,10 @@ python bin/check_report.py --company "目标公司/品牌名 (如: Action, Screw
   <meta name="sister_parents" content="[姐妹公司/母公司/同属集团简称列表，如 InterBauhaus。如无法查证到真实公司名则留空]">
   ```
 
-  **实体名称规范化（强制要求）：**
-  - 所有实体名称（包括公司主名、供应商、买方客户、竞争对手、姐妹公司）**一律必须去除法律后缀**（如 `AG`, `GmbH`, `LLC`, `Inc`, `Ltd`, `Co., Ltd.`, `PLC`, `SA`, `SAS`, `BV`, `SE` 等），仅保留干净的商业主体名称（如 `BAUHAUS AG` → `BAUHAUS`，`Fiskars Brands Inc.` → `Fiskars`）。
+  **实体名称规范化与超链接位置规范（强制要求）：**
+  - **Meta 纯文本铁律（严禁包含 HTML）**：`<head>` 区域内的所有 `<meta>` 标签 `content` 内容**必须严格保持纯文本格式**，绝对严禁填入任何 `<a>` 标签或 HTML 标记（否则将导致浏览器把头部解析为页面顶部渲染内容，严重破坏页面结构）！
+  - **超链接落位规则**：所有竞争对手（`competitors`）、核心供应商（`suppliers`）、母公司/集团（`sister_parents`）的平台报告超链接，**必须且仅能出现在报告正文对应的具体业务板块中**（例如：在「3. 渠道分布与竞争格局」的竞品对比卡片中为竞争对手打上超链接，在「5/6. 供应链与合规」中为具体供应商打上超链接）。
+  - **去除法律后缀**：所有实体名称（包括公司主名、供应商、买方客户、竞争对手、姐妹公司）**一律必须去除法律后缀**（如 `AG`, `GmbH`, `LLC`, `Inc`, `Ltd`, `Co., Ltd.`, `PLC`, `SA`, `SAS`, `BV`, `SE` 等），仅保留干净的商业主体名称（如 `BAUHAUS AG` → `BAUHAUS`，`Fiskars Brands Inc.` → `Fiskars`）。
 
   **产品品类命名规范（强制要求）：**
   - `products` meta 标签中的品类名称以及报告正文中所有产品/品类的描述，**必须严格对齐** `C:/Users/066/.gemini/config/skills/company-insight-pro/references/GTB产品结构.xlsx`（本 Skill 自带）中的**54个标准行业名称**（即「行业名称 (Category CN)」列）。
@@ -93,9 +104,13 @@ python bin/check_report.py --company "目标公司/品牌名 (如: Action, Screw
   6. **按钮样式**：使用 `.sand-btn` 水滴按钮样式。
 - **可视化要求**：必须使用 **ECharts** 实现至少两个（推荐三个）交互式图表。
 - **图像处理与门店横幅（强制要求）**：
-  1. 对于拥有实体门店的渠道商/零售商，报告顶部标题处必须附带一张高质量的实体门店横幅大图（建议使用横屏 21:9 比例的建筑摄影格式）。
-  2. **标志真实一致性**：门店图片上的企业品牌标志、名称、颜色及特有外文标识必须与官网或街景中的真实店面及招牌完全一致。
-  3. **自包含嵌入**：该图像一律通过 Base64 编码直接嵌入 HTML 模板中，禁止采用任何外部物理链接或相对路径。
+  1. 对于拥有实体门店的渠道商/零售商，报告顶部标题处必须附带一张高质量的实体门店横幅大图（建议使用横屏 21:9 或 16:9 比例的建筑摄影格式）。
+  2. **生图配额与用户协同标准工作流**：
+     - 首先尝试调用 `generate_image` 生图；
+     - **若遇到 Quota 不足（429 Too Many Requests）**：必须立即输出中英文生图 Prompt（含负向提示词与推荐比例 16:9），并告知用户将生成的图片放入 `D:\我的APP\客户档案` 文件夹中；
+     - **用户放入图片后**：直接调用 `scripts/build_report.py` 中的 `find_and_compress_banner()` 自动模糊匹配最新图片，自动等比缩放至最大宽度 1200px、JPEG 质量压缩至 150KB 以内并转为 Base64 嵌入（严禁将未经压缩的 >800KB 原图直接 Base64 嵌入，以彻底杜绝 HTTP 413 错误）。
+  3. **标志真实一致性**：门店图片上的企业品牌标志、名称、颜色及特有外文标识必须与官网或街景中的真实店面及招牌完全一致。
+  4. **自包含嵌入**：该图像一律通过 Base64 编码直接嵌入 HTML 模板中，禁止采用任何外部物理链接或相对路径。
 
 ### 4. 自动化校验与平台发布（强制门禁）
 
@@ -107,7 +122,9 @@ python bin/check_report.py --company "目标公司/品牌名 (如: Action, Screw
    ```
    *该脚本将严格审计：Meta 元数据完整性、54 个标准品类对齐、无 Emoji 净化、ECharts 真实 JS 语法解析、**Market Graphic 官方 Base64 Logo 存在性** 及 **Footer 底部官网链接**。若有任何一项不达标将直接中断阻断发布。*
 
-2. **调用发布脚本上传至平台**：
+2. **调用发布脚本上传至平台（内置知识图谱自动互联）**：
+   - `publish_report.py` 在发布前将自动提取 HTML 中的 `competitors`（竞争对手）、`suppliers`（供应商）、`sister_parents`（母公司/姐妹企业），自动联网与平台 880+ 篇报告库进行索引匹配；
+   - 对已收录企业自动注入符合 UI 规范的橙色高亮超链接与外链图标，自动回写本地 HTML 并完成发布。
    - **新建模式**（此前无此报告）：
      ```bash
      python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html>
@@ -116,6 +133,16 @@ python bin/check_report.py --company "目标公司/品牌名 (如: Action, Screw
      ```bash
      python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html> --target-id <已有报告ID>
      ```
+
+3. **回写任务中心状态（若本次调研来自任务中心认领）**：
+   - 报告发布成功获得 `report_id` 后，若本次调研是从任务中心认领的（带有 `task_id`），立即向任务中心提交完成：
+     ```bash
+     curl -X POST "https://marketgraphic.cn/api/agent/tasks/complete" \
+       -H "Content-Type: application/json" \
+       -H "Authorization: Bearer automation_agent_secret" \
+       -d "{\"task_id\": \"<task_id>\", \"report_id\": \"<report_id>\"}"
+     ```
+   - 调度大屏上的该任务将自动转变为绿色的 `✅ 调研完毕` 并绑定报告链接。
 
 ---
 

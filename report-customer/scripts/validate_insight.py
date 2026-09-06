@@ -75,8 +75,13 @@ def validate_html(html_path):
             
         if match:
             val = match.group(1).strip()
-            meta_values[meta] = val
-            print(f"  [OK] 检出 Meta -> {meta}: \"{val}\"")
+            # 审计 Meta 内容纯文本规范：严禁包含任何 HTML 标签
+            if "<" in val or ">" in val:
+                print(f"  [ERROR] 🚨 Meta 标签 \"{meta}\" 包含非法 HTML 标记 (如 <a> 标签): \"{val}\"！Meta 必须为纯文本。")
+                success = False
+            else:
+                meta_values[meta] = val
+                print(f"  [OK] 检出 Meta -> {meta}: \"{val}\"")
         else:
             print(f"  [ERROR] 缺失必需 Meta 标签: {meta}")
             success = False

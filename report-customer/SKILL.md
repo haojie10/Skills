@@ -17,7 +17,16 @@ description: 移植并强化自 Company Insight Pro 的 360 度买家与企业�
 
 ## 执行工作流
 
-### 0. 前置查重硬门禁（Hard Gate 0 · 强制最高优先级阻断）
+### 0. 任务认领与目标确定 (Task Claiming)
+- **从云端任务中心认领模式（当用户指令为“认领下一个客户”、“从任务中心调研”或指定序号区间时）**：
+  1. 🚨 **【禁止触碰本地文件】严禁读取或修改本地静态文件 `渠道地图调研清单.md` 或 `公司调研清单.md`**（防止多机并发冲突与状态覆盖）。
+  2. **向云端任务中心原子认领任务**：
+     向 `https://marketgraphic.cn/api/agent/tasks/claim` 发起 POST 请求（Header: `Authorization: Bearer automation_agent_secret`，Body 可选 `worker_name`, `min_seq`, `max_seq`）。
+  3. 拿到返回的任务对象 `{ id, seq_no, company_name, country, website }`，以此作为调研目标主体，并记录其 `task_id = id`。
+- **直接指定公司名模式（用户直接输入具体公司名，如“调研 BAUHAUS”）**：
+  直接以此公司名称作为目标主体。
+
+### 1. 前置查重硬门禁（Hard Gate 0 · 强制最高优先级阻断）
 在启动调研、生图或报告生成前，**必须首先运行查重脚本**：
 ```bash
 python D:/Workbuddy工作文件夹内/客户洞察/bin/check_report.py --company "目标公司名称"
@@ -62,8 +71,10 @@ HTML `<head>` 区域必须注入精确 `<meta>` 标签：
 <meta name="sister_parents" content="[母公司/集团简称]">
 ```
 
-> **品类名称标准化（强约束）**：
-> `products` 标签及全文涉及的产品品类名称，必须严格匹配项目文件 `d:/我的APP/Globaltradebuddy/docs/GTB产品结构.xlsx` 中的 **54个标准行业名称**（例如：使用“五金”、“工具”、“家居用品”、“家用电器”，禁止自创非标词）。
+> **Meta 元数据纯文本与超链接规范（强约束）**：
+> 1. `<head>` 区域内的所有 `<meta>` 标签 `content` 内容**必须严格保持纯文本格式**，严禁包含任何 `<a>` 标签或 HTML 标记。
+> 2. 竞争对手、核心供应商与母公司的超链接**必须仅写在正文对应的具体章节板块中**（如「渠道与竞争格局」或「供应链」板块）。
+> 3. `products` 标签及全文涉及的产品品类名称，必须严格匹配项目文件 `d:/我的APP/Globaltradebuddy/docs/GTB产品结构.xlsx` 中的 **54个标准行业名称**（例如：使用“五金”、“工具”、“家居用品”、“家用电器”，禁止自创非标词）。
 
 ### 4. 自动上传平台
 报告保存后，自动检测端口 `http://localhost:3000/api/agent/publish` 或 `.env` 中的 `GTB_API_URL`，发送 POST 请求将报告与拓扑关系注入 GlobalTradeBuddy 平台。
