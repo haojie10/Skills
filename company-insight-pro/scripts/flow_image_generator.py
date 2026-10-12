@@ -269,18 +269,18 @@ ARCHETYPE_TEMPLATES = {
     # 2. 机床模具/激光高端设备/自动化技术中心（如 Servus, Stenbergs）
     "machine_tool": (
         "A professional high-resolution wide-angle architectural photograph of the modern {company_name} "
-        "advanced manufacturing technology center and showroom in {country}. The sleek contemporary glass and steel "
-        "facility features prominent '{company_name}' brand signage on the facade. Through large showroom windows, "
-        "modern high-precision CNC machining centers, laser marking demonstration stations, and precision sample display cases "
-        "are visible in a pristine, bright industrial showroom environment. Clean concrete plaza, European industrial tech park, "
+        "advanced manufacturing commercial facility and demonstration store in {country}. The sleek contemporary glass and steel "
+        "commercial building features prominent '{company_name}' brand signage on the facade. Through large glass display windows, "
+        "modern high-precision CNC machining centers and precision sample display cases "
+        "are visible in a pristine, bright commercial environment. Clean concrete plaza, European industrial commercial center, "
         "crisp daylight, ultra-realistic, 8k resolution, architectural photography, photorealistic. --ar 16:9"
     ),
-    # 3. 户外运动/专业钓具/极地装备旗舰展厅（如 Aktiv Fritid）
+    # 3. 户外运动/专业钓具专营店（如 Aktiv Fritid）
     "outdoor_gear": (
         "A professional high-resolution wide-angle architectural photograph of the modern flagship {company_name} "
-        "outdoor sports and fishing equipment showroom in {country}. The contemporary building features Nordic natural "
+        "outdoor sports and fishing equipment retail store in {country}. The contemporary commercial building features Nordic natural "
         "timber and glass architecture with authentic '{company_name}' official logo signage. Expansive display windows "
-        "showcase technical waterproof waders, outdoor jackets, and fishing gear displays. Clean landscaped entrance plaza, "
+        "showcase technical outdoor displays and retail gear displays. Clean landscaped entrance plaza, "
         "serene Scandinavian daytime lighting, ultra-realistic architectural details, 8k resolution, photorealistic. --ar 16:9"
     ),
     # 4. 生命科学/医疗科技/专科器械临床中心（如 Aku Med）
