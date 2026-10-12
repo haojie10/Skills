@@ -16,6 +16,12 @@ import argparse
 import urllib.request
 import urllib.error
 
+# 强制 UTF-8 跨平台输出
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 try:
     from PIL import Image
     HAS_PIL = True
@@ -124,7 +130,10 @@ def auto_link_entities(html_content, gtb_api_url, agent_api_key):
     entities = []
     for field in [competitors, suppliers, sister_parents]:
         if field:
-            entities.extend([e.strip() for e in field.split(',') if e.strip()])
+            for e in field.split(','):
+                e_clean = e.split('|')[0].strip()
+                if e_clean:
+                    entities.append(e_clean)
 
     if not entities:
         return html_content
@@ -132,11 +141,17 @@ def auto_link_entities(html_content, gtb_api_url, agent_api_key):
     # 拆分 head 和 body，只在 body/main 内容中执行超链接注入，严禁触碰 head 与 meta 标签
     head_match = re.search(r'(<head.*?>.*?</head>)', html_content, re.IGNORECASE | re.DOTALL)
     if head_match:
-        head_part = head_match.group(1)
+        head_part = html_content[:head_match.end()]
         body_part = html_content[head_match.end():]
     else:
         head_part = ""
         body_part = html_content
+
+    # 常见法律后缀和泛称黑名单，严禁作为独立实体词进行全网知识图谱互联
+    LEGAL_STOPWORDS = {
+        'ltd', 'inc', 'corp', 'llc', 'gmbh', 'ag', 'plc', 'sa', 'sas', 'bv',
+        'se', 'co', 'group', 'company', 'holdings', 'holding', 'international'
+    }
 
     # 去重
     unique_entities = list(dict.fromkeys(entities))
@@ -148,14 +163,16 @@ def auto_link_entities(html_content, gtb_api_url, agent_api_key):
     linked_count = 0
 
     for entity in unique_entities:
-        if len(entity) < 2:
+        clean_word = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fa5]', '', entity).strip().lower()
+        if len(clean_word) < 2 or clean_word in LEGAL_STOPWORDS:
             continue
         c_lower = entity.lower()
         # 匹配对应报告
         matched = None
         for r in reports_db:
             title = (r.get('title') or '').lower()
-            if re.search(rf'\b{re.escape(c_lower)}\b', title) or c_lower in title:
+            # 严格使用单词边界匹配，避免短词（如 Ara）误匹配到包含该子串的无关名称（如 Kiara）
+            if re.search(rf'(?<![a-zA-Z0-9]){re.escape(c_lower)}(?![a-zA-Z0-9])', title):
                 matched = r
                 break
         
@@ -164,23 +181,40 @@ def auto_link_entities(html_content, gtb_api_url, agent_api_key):
             rep_url = matched.get('url') or f"https://marketgraphic.cn/reports/{rep_id}"
             rep_title = matched.get('title', '')
             
-            # 如果 body 中已经包含了该链接或该实体已被 <a> 包含，则无需再自动替换
-            if rep_id in body_part or rep_url in body_part or f'>{entity}</a>' in body_part or f'>{entity} <' in body_part:
+            # 如果 body 中已经包含了该链接，则无需再自动替换
+            if rep_id in body_part or rep_url in body_part:
                 continue
 
             link_html = f'<a href="{rep_url}" target="_blank" rel="noopener noreferrer" class="text-[#ff641e] hover:underline font-semibold inline-flex items-center gap-0.5" title="点击查阅平台已收录报告：《{rep_title}》">{entity} <i data-lucide="external-link" size="11" class="inline opacity-80"></i></a>'
             
-            # 安全替换 body 中的各种常见上下文（避免在 html 标签或属性内部替换）
-            patterns = [
-                (rf'<strong>{re.escape(entity)}</strong>', link_html),
-                (rf'(?<![="\'/>a-zA-Z0-9]){re.escape(entity)}(?![^<]*>)(?!</a>)(?=\s*[（\(、与和,\s])', link_html)
-            ]
-            for p, r_val in patterns:
-                if re.search(p, body_part):
-                    body_part = re.sub(p, r_val, body_part, count=2)
-                    linked_count += 1
-                    print(f"  [OK] 成功互联实体: [{entity}] -> 《{rep_title}》")
-                    break
+            # 智能 HTML 文本节点切分替换，确保只在纯文本中替换，且不破坏现有 <a> / <script> / <style> 标签
+            tokens = re.split(r'(<[^>]+>)', body_part)
+            in_skip_tag = 0
+            linked_for_this_entity = 0
+
+            for i in range(len(tokens)):
+                token = tokens[i]
+                if token.startswith('<'):
+                    tag_match = re.match(r'<(/)?([a-zA-Z0-9]+)', token)
+                    if tag_match:
+                        is_closing = bool(tag_match.group(1))
+                        tag_name = tag_match.group(2).lower()
+                        if tag_name in ['a', 'script', 'style', 'button']:
+                            if is_closing:
+                                in_skip_tag = max(0, in_skip_tag - 1)
+                            else:
+                                in_skip_tag += 1
+                else:
+                    if in_skip_tag == 0 and linked_for_this_entity < 2:
+                        # 在纯文本节点中精确匹配实体（支持单词边界及中英文紧邻）
+                        p = rf'(?<![a-zA-Z0-9]){re.escape(entity)}(?![a-zA-Z0-9])'
+                        if re.search(p, token):
+                            tokens[i] = re.sub(p, link_html, token, count=1)
+                            linked_for_this_entity += 1
+                            linked_count += 1
+                            print(f"  [OK] 成功互联实体: [{entity}] -> 《{rep_title}》")
+
+            body_part = ''.join(tokens)
 
     if linked_count > 0:
         print(f"[INFO] 知识图谱互联完成，共成功注入 {linked_count} 个互联跳转锚点。")
@@ -273,6 +307,7 @@ def publish_report_file(html_path, target_url=None, api_key=None, target_id=None
             if res.get('success'):
                 report_id = res.get('reportId') or res.get('id') or 'N/A'
                 print(f"[OK] Report published successfully! ID: {report_id}")
+                print(f"[OK] Online URL: https://marketgraphic.cn/reports/{report_id}")
                 return True, report_id
             else:
                 print(f"[ERR] Failed to publish: {res.get('error')}")

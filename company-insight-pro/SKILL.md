@@ -5,156 +5,355 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
 
 # Company Insight Pro (360° 企业战略情报洞察)
 
-本技能用于对全球任意企业（尤其是大型零售商、品牌商、供应链巨头）进行 360 度多维度的商业与战略情报穿透，并生成一份高颜值、交互式、自包含的 HTML 战略情报报告，并自动上传发布至 GlobalTradeBuddy 平台。
-
-## 工作流与执行步骤
-
-### 0. 任务认领与目标确定 (Task Claiming)
-- **从云端任务中心认领模式（当用户指令为“认领下一个客户”、“从任务中心调研”或指定序号区间时）**：
-  1. 🚨 **【禁止触碰本地文件】严禁读取或修改本地静态文件 `渠道地图调研清单.md` 或 `公司调研清单.md`**（以防止多机并发冲突与状态覆盖）。
-  2. **向云端任务中心原子认领任务**：
-     向 `https://marketgraphic.cn/api/agent/tasks/claim` 发起 POST 请求（Header: `Authorization: Bearer automation_agent_secret`，Body 可选 `worker_name`, `min_seq`, `max_seq`）。
-  3. 拿到返回的任务对象 `{ id, seq_no, company_name, country, website }`，以此作为调研目标主体，并记录其 `task_id = id`。
-- **直接指定公司名模式（用户直接输入具体公司名，如“调研 BAUHAUS”）**：
-  直接以此公司名称作为目标主体。
-
-### 1. 前置查重硬门禁（Hard Gate 0 · 强制最高优先级阻断）
-
-在启动深度全网搜索、调用生图工具或撰写报告之前，**必须首先运行查重脚本**：
-```bash
-python bin/check_report.py --company "目标公司/品牌名 (如: Action, Screwfix, Auchan)"
-```
-
-🚨 **【查重命中硬阻断铁律（最高执行级）】：**
-- **若脚本返回 `[发现重复/已存在]`**：
-  1. **【绝对阻断】必须立即停止当前轮次的一切后续工具调用（严禁调用 `generate_image`、`search_web`、`write_to_file` 或报告生成脚本）！**
-  2. **【模式分支判断】**：
-     - **默认交互确认模式（默认行为）**：
-       直接向用户输出查重警示卡片，汇报已有报告详情（标题、报告 ID、市场区域、发布日期、查看链接），并提出明确询问：
-       > *“⚠️ 平台报告大厅中已收录《[报告标题]》（报告 ID：`[report_id]`，查看链接：[url]）。请问您是直接查阅现有报告（结束/跳过当前任务），还是需要基于最新数据重新生成并覆盖更新？”*
-       **必须结束当前回复，等待用户做出明确选择后再继续下一步！**
-     - **自动跳过模式（当用户在任务指令中声明了“遇到已存在则跳过/视为已完成”时）**：
-       无需询问，直接将清单状态更新为【调研完毕】，输出已有报告链接并安全结束当前任务。
-     - **自动覆盖模式（当用户在任务指令中声明了“强制覆盖/全量刷新”时）**：
-       记录该已有报告的 `[report_id]` 与 `[标准主体名]`，直接进入下一步并启用 `--target-id [report_id]` 原地覆盖。
-  3. **【若用户指示仅需查阅/跳过】**：直接结束调研任务，避免重复消耗 Token 与生成配额。
-  4. **【若用户明确要求重新生成并覆盖更新】**：
-     ① 沿用该标准主体名作为 `<meta name="company_name">`；
-     ② 在 HTML `<head>` 中注入 `<meta name="target_report_id" content="[report_id]">`；
-     ③ 发布时使用 `--target-id [report_id]` 强制执行原地更新覆盖，保证原有报告 URL 和已解锁状态不变。
-- **若脚本返回 `[无重复]`**：放心进入下一步开始深度调研（新建模式）。
-
-### 1. 深度调研阶段
-
-- **全网搜索**：使用 `search_web` 或 `read_url_content` 搜索目标公司的最新年度报告、官网新闻中心、行业新闻、以及其在亚洲/中国的采购办事处/实体名称与主要竞争对手。
-- **财务数据获取**：重点关注最新财年或季度的全年销售额（营业额）、EBITDA 以及未来 3-5 年的投资计划。
-- **合规审计核查**：搜索该公司对供应商的特定审计要求（如 SMETA、BSCI、EcoVadis 分数要求）以及区域性环保法律法规准入限制（如法国 AGEC 法案等）。
-
-### 2. 报告结构化
-
-报告必须包含以下核心板块，**每个独立模块必须附带主要信息的来源链接**，详细要求见 [报告板块指南](references/report-sections.md)：
-
-- **概览与历史**：千字概览（必须包含最新的全年销售额/营业额）、渠道店铺结构、注册及网址信息与历史大事件。
-- **渠道深挖与竞争格局**：（针对零售商适用）渠道分布可视化、地理布局、主要市场竞争对手格局及消费人群画像。
-- **自有品牌分析**：（针对零售商/渠道商适用）梳理不同品类的自主品牌（自有品牌）矩阵定位、所辖细分品类及对华贴牌采购商机。
-- **财务与市场**：财务穿透与市场占位，重点拆解品类营收（非食品类占比）。
-- **业务单元与决策链**：重点突出采购组织结构与亚洲采购办公室具体注册实体，把"找哪个部门、找谁、在哪提交"讲清楚。
-- **供应链与合规**：采购图谱、主要供应商及其供应品类（供应商名称必须为具体公司名，不得为关联公司），以及合规红线。该板块梳理出的供应商名称将同步填入 `<meta name="suppliers">` 标签。
-- **用户舆情**：用户之声与产品改进方向。
-- **痛点与战略**：企业痛点与供应商实战建议。
-
-### 3. 交互式报告生成（强制基于母版填充）
-
-> 🚨 **【最高执行铁律：严禁从零编写 HTML 骨架】**
-> 生成报告时，**必须首先读取 `C:/Users/066/.gemini/config/skills/company-insight-pro/assets/report-template.html`** 作为唯一的 HTML 代码基底！
-> 必须完整保留母版中已预置的 **Market Graphic 官方 Base64 Logo**（位于 Header 右上角）、Header 吸顶布局、**8 大板块排版结构** 以及 Footer 底部的 **`www.marketgraphic.cn` 官方超链接**！仅将调研提取的业务数据替换填充进对应的槽位与 DOM 容器中。
-
-- **元数据注入（强制要求）**：生成的 HTML 文档 `<head>` 区域必须注入以下精确的 `<meta>` 标签（多值标签使用英文半角逗号 `,` 分割）：
-
-  ```html
-  <meta name="category" content="customer">
-  <meta name="summary" content="[150字以内的报告摘要说明]">
-  <meta name="company_name" content="[有且仅有一个标准公司主名，如 BAUHAUS AG]">
-  <meta name="company_aliases" content="[公司别名/曾用名列表，如 德国包豪斯, Bauhaus, Baus]">
-  <meta name="company_website" content="[公司官方网站网址，如 https://www.bauhaus.info]">
-  <meta name="competitors" content="[同业竞争对手简称列表，如 OBI, Hornbach, toom]">
-  <meta name="products" content="[产品与品类列表，如 建材, 五金工具, 园艺]">
-  <meta name="regions" content="[市场地区列表，如 德国, 欧洲]">
-  <meta name="channels" content="[产品销售分销渠道简称列表，若主体本身就是渠道商则留空。如无法查证到真实公司名则留空]">
-  <meta name="suppliers" content="[核心供应商简称列表（必须为具体公司名，且不得为该报告公司的关联公司），如 Würth, Kärcher。如无法查证到真实公司名则留空]">
-  <meta name="customers" content="[核心买方/大客户简称列表（必须为具体公司名，且不得为该报告公司的关联公司），如 德国电信, 法兰克福机场。如无法查证到真实公司名则留空]">
-  <meta name="sister_parents" content="[姐妹公司/母公司/同属集团简称列表，如 InterBauhaus。如无法查证到真实公司名则留空]">
-  ```
-
-  **实体名称规范化与超链接位置规范（强制要求）：**
-  - **Meta 纯文本铁律（严禁包含 HTML）**：`<head>` 区域内的所有 `<meta>` 标签 `content` 内容**必须严格保持纯文本格式**，绝对严禁填入任何 `<a>` 标签或 HTML 标记（否则将导致浏览器把头部解析为页面顶部渲染内容，严重破坏页面结构）！
-  - **超链接落位规则**：所有竞争对手（`competitors`）、核心供应商（`suppliers`）、母公司/集团（`sister_parents`）的平台报告超链接，**必须且仅能出现在报告正文对应的具体业务板块中**（例如：在「3. 渠道分布与竞争格局」的竞品对比卡片中为竞争对手打上超链接，在「5/6. 供应链与合规」中为具体供应商打上超链接）。
-  - **去除法律后缀**：所有实体名称（包括公司主名、供应商、买方客户、竞争对手、姐妹公司）**一律必须去除法律后缀**（如 `AG`, `GmbH`, `LLC`, `Inc`, `Ltd`, `Co., Ltd.`, `PLC`, `SA`, `SAS`, `BV`, `SE` 等），仅保留干净的商业主体名称（如 `BAUHAUS AG` → `BAUHAUS`，`Fiskars Brands Inc.` → `Fiskars`）。
-
-  **产品品类命名规范（强制要求）：**
-  - `products` meta 标签中的品类名称以及报告正文中所有产品/品类的描述，**必须严格对齐** `C:/Users/066/.gemini/config/skills/company-insight-pro/references/GTB产品结构.xlsx`（本 Skill 自带）中的**54个标准行业名称**（即「行业名称 (Category CN)」列）。
-  - 禁止使用自定义的品类简称（如"日用百货""服装鞋帽""家装维修"），必须分别替换为标准名称（如"家居用品""男女装/童装/内衣/鞋""五金/工具/建筑及装饰材料"）。
-
-- **UI 规范强制对齐**：报告设计必须严格遵守 [ui-spec.md](references/ui-spec.md) 中的规范。
-  1. **色彩体系**：使用暖沙乳白 `#fdfbf7` 为主背景、暖橘 `#ff641e` 为焦点色，禁用高饱和度红绿蓝紫。
-  2. **字体排版**：使用系统无衬线字体，大标题 1.25rem/400，正文 0.85~0.95rem/400。
-  3. **圆角与阴影**：主卡片 22px、子容器 14~16px、标签 12px，阴影使用暖沙色系 rgba。
-  4. **标签净化**：关联实体标签统一使用 `.report-tag` 轻沙配色，禁用彩色胶囊标签。
-  5. **无 Emoji**：禁止任何 Emoji，使用 Feather/Lucide Icons 风格 SVG 替代。
-  6. **按钮样式**：使用 `.sand-btn` 水滴按钮样式。
-- **可视化要求**：必须使用 **ECharts** 实现至少两个（推荐三个）交互式图表。
-- **图像处理与门店横幅（强制要求）**：
-  1. 对于拥有实体门店的渠道商/零售商，报告顶部标题处必须附带一张高质量的实体门店横幅大图（建议使用横屏 21:9 或 16:9 比例的建筑摄影格式）。
-  2. **生图配额与用户协同标准工作流**：
-     - 首先尝试调用 `generate_image` 生图；
-     - **若遇到 Quota 不足（429 Too Many Requests）**：必须立即输出中英文生图 Prompt（含负向提示词与推荐比例 16:9），并告知用户将生成的图片放入 `D:\我的APP\客户档案` 文件夹中；
-     - **用户放入图片后**：直接调用 `scripts/build_report.py` 中的 `find_and_compress_banner()` 自动模糊匹配最新图片，自动等比缩放至最大宽度 1200px、JPEG 质量压缩至 150KB 以内并转为 Base64 嵌入（严禁将未经压缩的 >800KB 原图直接 Base64 嵌入，以彻底杜绝 HTTP 413 错误）。
-  3. **标志真实一致性**：门店图片上的企业品牌标志、名称、颜色及特有外文标识必须与官网或街景中的真实店面及招牌完全一致。
-  4. **自包含嵌入**：该图像一律通过 Base64 编码直接嵌入 HTML 模板中，禁止采用任何外部物理链接或相对路径。
-
-### 4. 自动化校验与平台发布（强制门禁）
-
-报告生成并保存后，**必须先执行校验脚本；只有在校验完全通过后，才允许调用发布脚本**：
-
-1. **执行自动化合规与品牌门禁校验（强制执行）**：
-   ```bash
-   python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/validate_insight.py <path/to/your/generated/html>
-   ```
-   *该脚本将严格审计：Meta 元数据完整性、54 个标准品类对齐、无 Emoji 净化、ECharts 真实 JS 语法解析、**Market Graphic 官方 Base64 Logo 存在性** 及 **Footer 底部官网链接**。若有任何一项不达标将直接中断阻断发布。*
-
-2. **调用发布脚本上传至平台（内置知识图谱自动互联）**：
-   - `publish_report.py` 在发布前将自动提取 HTML 中的 `competitors`（竞争对手）、`suppliers`（供应商）、`sister_parents`（母公司/姐妹企业），自动联网与平台 880+ 篇报告库进行索引匹配；
-   - 对已收录企业自动注入符合 UI 规范的橙色高亮超链接与外链图标，自动回写本地 HTML 并完成发布。
-   - **新建模式**（此前无此报告）：
-     ```bash
-     python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html>
-     ```
-   - **覆盖更新模式**（此前已有报告并明确更新）：
-     ```bash
-     python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/publish_report.py <path/to/your/generated/html> --target-id <已有报告ID>
-     ```
-
-3. **回写任务中心状态（若本次调研来自任务中心认领）**：
-   - 报告发布成功获得 `report_id` 后，若本次调研是从任务中心认领的（带有 `task_id`），立即向任务中心提交完成：
-     ```bash
-     curl -X POST "https://marketgraphic.cn/api/agent/tasks/complete" \
-       -H "Content-Type: application/json" \
-       -H "Authorization: Bearer automation_agent_secret" \
-       -d "{\"task_id\": \"<task_id>\", \"report_id\": \"<report_id>\"}"
-     ```
-   - 调度大屏上的该任务将自动转变为绿色的 `✅ 调研完毕` 并绑定报告链接。
+本技能用于对全球任意企业（尤其是大型零售商、品牌商、供应链巨头）进行 360 度多维度的商业与战略情报穿透，并生成一份高颜值、高结构化、卡片式排版、交互式、自包含的 HTML 战略情报报告，并自动上传发布至 GlobalTradeBuddy 平台。
 
 ---
 
-## 质量标准
+## 极简三步闭环工作流 (Three-Step Streamlined Workflow)
 
-- **母版继承原则（强制）**：必须以 `assets/report-template.html` 为唯一母版，严禁私自手写 HTML 框架。
-- **无捏造原则**：联系人邮箱等私密信息如无法获取，必须标注为"无公开信息"，严禁捏造。
-- **深度性**：概览模块必须达到 1000 字左右的深度分析，而非简单的列表。
-- **落地性**：报告的最后一章必须提供"针对中国供应商的实战建议"。
-- **品类名称标准化**：报告全文（包括 meta 标签、ECharts 图表标签、品牌矩阵表格、策略建议）中所有产品/品类名称必须使用 `references/GTB产品结构.xlsx` 中的54个标准行业名称。
-- **图表完整渲染契约**：所有在 HTML 中声明了 `class="chart-container"` 且有 ID 的 `div` 占位，在 JS 中必须有独立对应的 `echarts.init()` 初始化及 `setOption` 渲染逻辑。
-- **自包含与清理（强制要求）**：
-  1. 报告必须是**单文件 HTML**（图像 Base64 嵌入）。
-  2. 任务结束前，**必须删除**所有过程中产生的临时图片、脚本及中间文件，仅保留最终的 HTML 报告。
-- **无需浏览器验证**：报告生成并通过 `validate_insight.py` 后即可发布，**禁止**自动调用浏览器工具进行视觉验证。
+```
+[步骤 0 & 1: 认领与查重] ──> [步骤 2: 深度穿透调研] ──> [步骤 3: 一键自愈构建、发布与回写]
+```
+
+### 1. 任务认领与前置查重门禁 (Claim & Check)
+
+#### 认领模式（当用户指示“认领下一个任务”时）：
+1. **禁止读取或修改本地静态清单文件**，直接向云端发起原子认领请求：
+   ```python
+   import urllib.request, json
+   req = urllib.request.Request(
+       'https://marketgraphic.cn/api/agent/tasks/claim',
+       data=json.dumps({"worker_name": "antigravity", "tag": "antigravity"}).encode('utf-8'),
+       headers={'Content-Type': 'application/json', 'Authorization': 'Bearer automation_agent_secret'}
+   )
+   res = json.loads(urllib.request.urlopen(req).read().decode('utf-8'))
+   # 记录 task_id = res['task']['id'], company_name = res['task']['company_name']
+   ```
+2. **运行查重门禁脚本**：
+   ```bash
+   python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/check_report.py --company "目标公司名"
+   ```
+   * **若退出码为 10（已存在）**：
+     * **默认行为**：停止后续调用，输出查重卡片并询问用户是“跳过任务”还是“覆盖更新（`--target-id [已有报告ID]`）”。
+     * **自动跳过**：直接调用 `/api/agent/tasks/complete` 回写完成并结束任务。
+   * **若退出码为 0（无重复）**：立即进入下一步调研。
+
+---
+
+### 2. 深度穿透调研 (Deep Research)
+
+使用 `search_web` 穿透以下 8 大核心维度（每模块附带一手来源链接）：
+1. **概览与历史（500-800字）**：创立与发展历程、所有权架构、最新财年营业收入（Turnover / Revenue）、门店数及业态分布、行业地位与核心优势、对华直采战略定位。
+2. **财务与市场**：营收穿透、同店销售增长率（LFL）、客单价、非食品/生鲜营收占比。
+3. **渠道与竞品**：门店网络区域分布、核心竞品（至少 3-5 家头部竞品）优劣势对比、消费人群画像。
+4. **自有品牌与贴牌**：私有品牌矩阵、覆盖品类、中国制造 OEM/ODM 合作契机。
+5. **决策链与机构**：采购组织架构、决策流程、亚洲采购办/对华采购通道。
+6. **供应链与合规**：核心供应商名单、物流港口与分销中心（DC）、强制性准入认证（如 BSCI/SMETA、SABS、FDA、EAC、EPR）；**必须构建「对华大宗商品采购估值趋势图（ECharts 柱状/折线图）」**：
+   * **真实 FOB 金额科学倒推（严禁虚高）**：金额口径统一采用 **FOB 离岸直采价**。推导时必须根据目标企业**业态渠道长短**动态匹配折算系数（**实体零售**按 $30\% \sim 40\%$、**专业工程分销**按 $48\% \sim 58\%$、**B2B一级总代**按 $62\% \sim 72\%$、**源头工厂**按 $70\% \sim 80\%$、**纯线上D2C**按 $18\% \sim 25\%$），剔除终端零售毛利与中转海运关税后，再乘以品类权重与对华渗透率。
+   * **物理出运柜量 (40HQ) 逻辑闭环**：以测算出的真实 FOB 货值除以品类单柜标准货值（轻工日百约 3~5 万美元/柜；五金小家电约 5~8 万美元/柜；机能服饰约 8~15 万美元/柜），推算出年度总集装箱柜数与月均出运节奏（如“年直采出运约 700 柜，月均 58 柜”），确保正文文字与图表数字严密吻合。
+7. **用户舆情与痛点**：消费者高频好评与差评吐槽、运营核心痛点（如极端环境失效、防损、物流拥堵）。
+8. **供应商实战策略（必须提供 4 条建议卡片，呈 2×2 黄金网格排版）**：
+   * ① **选品与产品定制策略**：针对该企业的采购痛点与热销品类，提炼具体的直采/代工产品型号及技术参数。
+   * ② **价格带与包装规格建议**：明确目标市场的价格定位、起订量（MOQ）、彩盒包装及多语言标签/条码规范。
+   * ③ **质量合规与认证门禁**：列明该企业及目标国强制要求的认证资质（如 CE、EAC、E-mark、RCM、RoHS、BSCI 等）。
+   * ④ **渠道切入与对接路径**：指出联系采购办/技术委员会的最佳时机、打样送测流程及跨境物流与结算方案。
+
+---
+
+### 2.5 实体门店判定与 8 大商业业态 Banner 提示词规范
+
+在调研中，必须精准识别企业的**商业业态**并设置 `HAS_PHYSICAL_STORE: true | false`：
+
+#### A. 必须开启生图 & 横幅（`HAS_PHYSICAL_STORE: true`）：
+严禁使用千篇一律的“街边零售店”提示词！流水线内置 **8 大商业业态 Prompt 智能引擎**（或在 JSON 中通过 `BANNER_PROMPT` / `COMMERCIAL_TYPE` 显式指定）：
+
+1. **`heavy_machinery` 重型工程/矿山机械/固废环保装备（如 Aksel Benzin）**：
+   * 提示词特征：现代工业总部大楼 + **开阔重载水泥地面露天展场** + 整齐陈列履带破碎机/筛分站/堆料机 + 工程快修服务车，严禁闲逛散客。
+2. **`machine_tool` 机床模具/激光高端设备/自动化技术中心（如 Servus）**：
+   * 提示词特征：现代玻璃钢结构高新科技大楼 + 室内高精度数控机床/激光打标演示台/工件打样展柜 + 工业园区整洁环境。
+3. **`outdoor_gear` 户外运动/专业钓具/极地装备旗舰展厅（如 Aktiv Fritid）**：
+   * 提示词特征：北欧木质玻璃极简立面 + 橱窗陈列涉水服/机能冲锋衣/高碳钓竿 + 品牌旗帜与自然采光。
+4. **`medical_device` 生命科学/专科医疗器械/临床演示中心（如 Aku Med）**：
+   * 提示词特征：现代白色/银灰极简医疗科技建筑 + 洁净明亮的心肺检测与步态分析演示中心 + 严谨生命科技质感。
+5. **`industrial_mro` 工业 MRO / 五金工具 / 电气低压分销网点（如 Kristall-Elektro, Rexel）**：
+   * 提示词特征：现代化工业分销商门市与展厅 + 货架工具陈列 + 装运月台与工装工程车辆。
+6. **`building_materials` 建材大卖场 / 木业卫浴 / DIY 仓储（如 Home Depot, Leroy Merlin）**：
+   * 提示词特征：郊区超大型仓储式大卖场立面 + 宽阔入口 + 户外木材与园艺装卸区 + 大型停车场。
+7. **`auto_parts` 汽配与轮胎快修连锁中心（如 AutoZone, NAPA）**：
+   * 提示词特征：临街汽配专营商城 + 品牌立面 + 透明快修工位与轮胎展架。
+8. **`retail_supermarket` 综合零售大卖场 / 超市 / 购物中心（如 Walmart, Costco）**：
+   * 提示词特征：现代综合商超外立面 + 巨大 Logo + 玻璃推拉门 + 满载推车与顾客的停车场。
+
+#### B. 严禁生图 & 自动移除横幅（`HAS_PHYSICAL_STORE: false`）：
+* 纯进口商 / 进出口贸易商（Importers / Exporters / Traders）
+* 源头制造商 / OEM/ODM 代工厂（Factories / Manufacturers）
+* 纯线上电商品牌 / D2C 品牌 / 软件方案商
+* 全国性无门市总代 / 保税仓一级批发商（Pure B2B Master Distributors，如 Aku Denmark 等纯橡胶密封件分销商）
+* **流水线自动化行为**：当 `HAS_PHYSICAL_STORE: false` 时，流水线会自动跳过生图，并从 HTML 中**完全移除顶部店面横幅 DOM 区块**，使 Header 吸顶栏直接置顶展示，保持版面干净专业。
+
+### 2.6 竞争对手（Competitors）4段式管道规范与平台裂变支撑
+
+为了让报告发布后，平台能够精准自动裂变出高质量的**待调研新任务**（写入 `research_tasks` 任务池），并且让下一个 Agent 认领任务时能够立即获悉其**官网**和**公司形态**（提前判定是否需要实体店生图 Banner），`COMPETITORS` 必须严格遵循 **4 段式管道格式**：
+
+```text
+名称 | 国家 | 官网 | 【形态标签】主营品类与市场定位
+```
+
+#### 1. 公司形态标签标准（必须显式标注其商业业态）：
+* **`[实体连锁零售]`**：面向个人消费者的综合超市、大卖场、折扣店、百货（如 Walmart、Costco、Lidl）。
+* **`[专业工程分销/展厅]`**：面向专业工匠/承包商的实体分销网点（如电气、汽配、五金工具、建材MRO门店）。
+* **`[专业专卖店]`**：垂直品类品牌直营专卖店、城市展厅（如 Apple Store、IKEA、Decathlon）。
+* **`[纯工控B2B/进口商]`**：无实体门市的进口贸易商、全国性一级总代、供应链服务商。
+* **`[源头工厂/OEM代工]`**：自建生产基地的设备制造商、零部件代工厂。
+
+#### 2. 规范示例：
+```text
+ETM|俄罗斯|https://etm.ru|[专业工程分销] 全俄电气与工控综合分销龙头,
+Russky Svet|俄罗斯|https://russvet.ru|[专业工程分销] 跨国低压电气与照明工程分销巨头,
+Leroy Merlin|俄罗斯|https://leroymerlin.ru|[实体连锁零售] 大型DIY五金建材连锁大卖场
+```
+
+---
+
+### 3. 一键自愈构建、发布与回写流水线 (Pipeline)
+
+调研数据存为临时 `report_data.json`，运行统一流水线命令即可完成：**全量纯数据卡片渲染 + 门店形态自动识别与横幅裁剪 + 业态自适应生图 Prompt 注入 + 竞品 4 段式管道智能融合成型 + Emoji/法律后缀自愈清洗 + 本地 Google Flow 自动生图 + 门禁审计 + 知识图谱互联发布 + 任务中心自动回写**！
+
+```bash
+# 新建模式（支持一键自动调用本地 Google Flow 业态自适应生图闭环）
+python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/build_report.py \
+  --data report_data.json \
+  --output "d:/我的APP/客户档案/<区域>/<公司名>_战略情报报告.html" \
+  --auto-flow \
+  --validate \
+  --publish \
+  --task-id "<task_id>"
+
+# 覆盖更新模式（指定 --target-id 原地更新）
+python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/build_report.py \
+  --data report_data.json \
+  --output "d:/我的APP/客户档案/<区域>/<公司名>_战略情报报告.html" \
+  --target-id "<已有报告ID>" \
+  --auto-flow \
+  --validate \
+  --publish \
+  --task-id "<task_id>"
+```
+
+---
+
+## 🎨 全量纯数据标准契约 (100% Pure-Data Schema)
+
+**严禁在 JSON 中手写粗糙无样式的 HTML**！底层流水线已内置高保真 Tailwind 卡片化渲染引擎，只需填入清晰的结构化字段：
+
+```json
+{
+  "CATEGORY": "customer",
+  "SUMMARY": "150字以内的报告摘要...",
+  "COMPANY_NAME": "企业标准主名（无法律后缀，如 Kristall-Elektro）",
+  "COMPANY_ALIASES": "别名列表，如 Kristall Elektro, Кристалл-Электро",
+  "COMPANY_WEBSITE": "https://kristall43.ru",
+  "REGIONS": "俄罗斯,东欧,独联体",
+  "COMPETITORS": "ETM|俄罗斯|https://etm.ru|[专业工程分销] 全俄电气与工控综合分销龙头, Russky Svet|俄罗斯|https://russvet.ru|[专业工程分销] 跨国低压电气与照明工程分销巨头, Leroy Merlin|俄罗斯|https://leroymerlin.ru|[实体连锁零售] 大型DIY五金建材连锁大卖场",
+  "_COMPETITORS_COMMENT": "⚠️ COMPETITORS 必须使用 4 段式管道格式：名称|国家|官网|【形态标签】主营品类与市场定位，直接服务于平台任务裂变与下一轮自动化调研",
+  "PRODUCTS": "电子电气产品-电线电缆与低压配电,照明产品-LED商业照明,电子电气产品-开关插座与配电箱柜",
+  "_PRODUCTS_COMMENT": "⚠️ PRODUCTS 必须包含或使用前缀对齐 GTB 54 标准大类（如：家用电器、餐厨器皿、家具、通用机械及机械基础件、照明产品、电子消费品及信息产品、五金、工具、个人护理用具等），以便后台精准打标",
+  "CHANNELS": "专业电气连锁超商,工程与工业直供,数字化商城",
+  "SUPPLIERS": "IEK, DKC, EKF, Gauss, TDM Electric",
+  "CUSTOMERS": "区域建筑承包商,电力安装施工队,工业制造企业",
+  "SISTER_PARENTS": "РАЭК, АО «Кристалл»",
+  "TIER_LEVEL": "TIER 2 • 俄罗斯区域电气分销龙头",
+  "REPORT_SUBTITLE": "深耕俄罗斯伏尔加-维亚特卡经济区30载的专业电气连锁分销与成套配电领军者",
+  "HAS_PHYSICAL_STORE": true,
+  "COMMERCIAL_TYPE": "industrial_mro",
+  "_COMMERCIAL_TYPE_OPTIONS": "heavy_machinery | machine_tool | outdoor_gear | medical_device | industrial_mro | building_materials | auto_parts | retail_supermarket",
+  "BANNER_PROMPT": "可选：显式覆盖的英文超写实生图提示词...",
+  "BANNER_ALT": "门店外景实拍",
+  "BANNER_LOCATION": "Kirov, Russia",
+  "BANNER_TITLE": "Kristall-Elektro 战略情报报告",
+
+  "OVERVIEW_DATA": [
+    "第一段（200-300字）：公司创立背景与历史演进、企业性质与所有权结构（如ESOP/上市/家族控股）、总部基地、实体网络规模及行业核心地位...",
+    "第二段（200-300字）：主营业务与三大核心垂直领域、商业模式、技术服务特色及核心竞争优势...",
+    "第三段（150-200字）：宏观经济与产业红利、战略并购与网络扩张路径、对华供应链合作与中国源头工厂直采战略定位..."
+  ],
+
+  "REGISTRATION_DATA": {
+    "法定注册主体": "ООО «КРИСТАЛЛ-ЭЛЕКТРО»",
+    "统一税号 (ИНН)": "4345462758 / ОГРН 1174350004058",
+    "行业协会身份": "俄罗斯电气公司协会（РАЭК / RAEC）核心成员",
+    "成立年份": "1994 年",
+    "全球总部": "г. Киров, Россия",
+    "核心管理层": "Алексей Анатольевич Фурсов (CEO)",
+    "主实体营业额": "7.76 亿卢布 (YoY +12.3%)",
+    "网络规模": "30+ 家直营大卖场 / 20万+活跃SKU"
+  },
+
+  "BRAND_MATRIX_DATA": {
+    "title": "核心合作品牌与授权分销矩阵",
+    "subtitle": "RAEC 联合采购目录",
+    "brands": [
+      {"name": "IEK", "desc": "俄本土低压电气龙头"},
+      {"name": "DKC", "desc": "工业布线与配电柜体"},
+      {"name": "EKF", "desc": "工控与低压配电"},
+      {"name": "Gauss", "desc": "高端商业与家居照明"}
+    ]
+  },
+
+  "TIMELINE_DATA": [
+    {"year": "1994 年", "title": "品牌创立", "desc": "成立首家专业电工器材与灯饰门店。"},
+    {"year": "2024 年", "title": "全渠道深化", "desc": "荣获全俄最佳客户忠诚度大奖。"}
+  ],
+
+  "FINANCE_CHART1_TITLE": "营业收入与增长趋势",
+  "CHART1_OPTION": { ... ECharts 配置对象 ... },
+  
+  "FINANCE_INSIGHTS_DATA": [
+    {"title": "洞察 1：营收逆势稳增", "tag": "韧性强劲", "color": "green", "desc": "主实体年营业额超7.7亿卢布..."},
+    {"title": "洞察 2：高毛利业务对冲内卷", "tag": "结构优化", "color": "orange", "desc": "成套配电与商业照明毛利率保持在30%+..."}
+  ],
+
+  "CHANNEL_CHART_TITLE": "业务业态与区域网络结构",
+  "CHART2_OPTION": { ... ECharts 配置对象 ... },
+
+  "CHANNELS_GRID_DATA": [
+    {"title": "30+ 实体直营大卖场", "icon": "map-pin", "desc": "覆盖基洛夫及毗邻共和国核心商圈..."},
+    {"title": "B2B 工程集成与配电总装", "icon": "wrench", "desc": "自营总装车间直接承接工业配电柜定制..."}
+  ],
+
+  "COMPETITORS_DATA": [
+    {
+      "name": "ETM",
+      "tag": "全俄电气分销巨头",
+      "position": "俄罗斯最大电气综合分销商，拥有全国性物流枢纽与 iPRO 平台。",
+      "pros_cons": "规模极大，但区域定制与本地工程师响应不及区域专营店灵活。"
+    }
+  ],
+
+  "BRAND_TABLE_DATA": [
+    {
+      "category": "LED 商业与工业照明",
+      "brands": "Gauss, ERA, IEK, Jazzway",
+      "oem": "高光效 UFO 工矿灯、防爆三防灯、磁吸轨道灯 OEM/ODM 直采契机极佳。"
+    }
+  ],
+
+  "OEM_OPPORTUNITY_DATA": {
+    "title": "去欧美化后的中国源头工厂直采红利",
+    "tag": "战略合作高地",
+    "desc": "欧洲巨头撤离后出现巨大空白，急需质量过硬、具备 EAC 认证的中国源头工厂直采..."
+  },
+
+  "DECISION_CHAIN_DATA": [
+    {"step": "01", "role": "RAEC 联合集采委员会", "desc": "大宗标准电气电缆统谈统采..."},
+    {"step": "02", "role": "总部商业采购中心", "desc": "负责新增特色品类与海外对华采购框架协议..."}
+  ],
+
+  "CONTACT_PATH_DATA": {
+    "官方采购商城": "https://kristall43.ru",
+    "供应链热线": "8 (800) 201-68-50",
+    "采购专线邮箱": "help@kristall43.ru"
+  },
+
+  "SUPPLY_CHART_TITLE": "对华大宗商品采购估值与品类趋势",
+  "CHART3_OPTION": {
+    "tooltip": {"trigger": "axis", "axisPointer": {"type": "cross"}},
+    "legend": {"data": ["对华直采总金额 (百万¥/€/$)", "核心品类一", "核心品类二", "核心品类三"]},
+    "grid": {"left": "3%", "right": "4%", "bottom": "3%", "containLabel": true},
+    "xAxis": {"type": "category", "data": ["2020", "2021", "2022", "2023", "2024", "2025(E)", "2026(E)"]},
+    "yAxis": {"type": "value", "name": "采购金额"},
+    "series": [
+      {
+        "name": "对华直采总金额 (百万¥/€/$)",
+        "type": "line",
+        "smooth": true,
+        "data": [6.5, 9.2, 13.0, 18.5, 24.0, 31.5, 39.0],
+        "itemStyle": {"color": "#dc2626"},
+        "lineStyle": {"width": 3}
+      },
+      {
+        "name": "核心品类一",
+        "type": "bar",
+        "stack": "品类结构",
+        "data": [3.0, 4.2, 6.0, 8.8, 11.5, 15.0, 19.0],
+        "itemStyle": {"color": "#2563eb"}
+      },
+      {
+        "name": "核心品类二",
+        "type": "bar",
+        "stack": "品类结构",
+        "data": [2.2, 3.0, 4.2, 5.8, 7.5, 10.0, 12.5],
+        "itemStyle": {"color": "#059669"}
+      },
+      {
+        "name": "核心品类三",
+        "type": "bar",
+        "stack": "品类结构",
+        "data": [1.3, 2.0, 2.8, 3.9, 5.0, 6.5, 7.5],
+        "itemStyle": {"color": "#f59e0b"}
+      }
+    ]
+  },
+
+  "SUPPLY_FLOW_DATA": [
+    {"title": "源头工厂直采", "desc": "RAEC集采 / 广东浙江电气产区"},
+    {"title": "中欧班列清关", "desc": "口岸直通 ➔ 莫斯科/叶卡枢纽"},
+    {"title": "中央总仓分拨", "desc": "全项性能抽检 / 配电车间领料"},
+    {"title": "全境终端履约", "desc": "30+ 门店自提 / 专车配送"}
+  ],
+
+  "COMPLIANCE_DATA": [
+    {"standard": "EAC TR CU 004/2011 (LVD)", "badge": "强制认证", "desc": "低电压电气设备安全指令，全系产品必备。"},
+    {"standard": "EAC TR CU 020/2011 (EMC)", "badge": "强制认证", "desc": "电磁兼容性指令，LED驱动与智能开关必须达标。"}
+  ],
+
+  "SECTION_6_LOGISTICS_TIP": "跨境结算与物流建议：优先采用中俄跨境人民币（RMB / CIPS）直付通道，单票运输周期约 18-25 天。",
+
+  "PAIN_POINTS_DATA": [
+    {"title": "传统欧洲备件短缺与价格畸高", "level": "供应链缺口", "desc": "工业设备存量维保急需高兼容性中国元器件平替..."},
+    {"title": "高寒环境（-35°C）驱动失效", "level": "工况环境痛点", "desc": "极寒环境下电容冻裂与漏水频发，要求 -40°C 宽温驱动..."}
+  ],
+
+  "SOCIAL_MEDIA_DATA": {
+    "score": "Yandex / 2GIS 评分 4.6/5.0",
+    "satisfaction": "电工好评率 92%",
+    "pros": "配件极齐全、配电箱现场可配齐、积分返现划算",
+    "cons": "智能家居配件偶有缺货、希望多增加极简轻奢面板",
+    "source": "https://vk.com/kristall"
+  },
+
+  "IMPROVEMENTS_DATA": [
+    {"title": "耐高寒超宽温驱动电源", "desc": "标配 -40°C~+50°C 宽温恒流隔离驱动，内置防雷抗浪涌保护。"},
+    {"title": "俄标免零线单火智能开关", "desc": "针对老旧建筑无零线痛点，开发支持 220V 俄标底盒的 Tuya 单火触控面板。"}
+  ],
+
+  "STRATEGIES_DATA": [
+    {
+      "title": "选品与产品定制策略：主打全套 EAC 合规的耐高寒工商业 LED 照明与配电平替",
+      "desc": "针对其工程客户高频采购品类，推出具备 TR CU 004/020 认证的高光效工矿灯与磁吸灯具，提供与标准 DIN 导轨兼容的断路器、浪涌保护器，综合降本 40%+。"
+    },
+    {
+      "title": "价格带与包装规格策略：分级定价切入工程直供与零售分销，标配全俄文彩盒",
+      "desc": "设置阶梯起订量（零售样单 MOQ 100-300 件，工程批量 MOQ 1000+ 件）；外包装采用高强度瓦楞纸箱及全俄文产品参数标签与 EAN-13 零售条码，适配终端货架直销。"
+    },
+    {
+      "title": "质量合规与认证门禁：筑牢 EAC 准入与高寒可靠性背书，规避海关清关风险",
+      "desc": "前置完备 EAC 证书及第三方俄标实验室耐低温（-40°C）检测报告；提供 3-5 年换新质保承诺，解决其核心客户对高寒工况故障的后顾之忧。"
+    },
+    {
+      "title": "渠道切入与对接路径：切入 RAEC 联合集采与商业采购中心，提供快速打样试单",
+      "desc": "首选对接总部商业采购中心及 RAEC 联合集采委员会，提供免费工程样品与测试报告；支持中俄跨境人民币（CIPS）直付通道，单票中欧班列 18-25 天快速交付。"
+    }
+  ]
+}
+```
+
+---
+
+## 质量与美学审计门禁 (Visual Quality Gates)
+
+1. **结构化卡片全覆盖**：所有文本板块均必须通过 `XXX_DATA` 纯数据结构注入，严禁任何大段无格式裸文本。
+2. **自动净化与自愈**：自动剥离 Emoji、去除法律后缀、清洗非法 HTML。
+3. **生图双轨自愈（--auto-flow）**：未指定横幅时直连本地 CDP 9222 驱动 Google Flow 自动生成 16:9 现代店面实景图并优化嵌入。
+4. **知识图谱互联与任务闭环**：自动互联站内关联企业超链接，发布后自动回写 `/api/agent/tasks/complete`。
+5. **过程临时文件自动清理（仅保留 HTML 报告）**：HTML 报告内置高保真 CSS、JS 与 Base64 门店横幅图，属于完全自包含的独立文件。流水线完成发布与回写后，必须自动清理构建过程中产生的中间临时文件（`report_data.json`、生成的本地 `.jpg` 店面图、`scratch/` 脚本等），确保客户档案目录下**仅保留最终的 `.html` 报告文件**。

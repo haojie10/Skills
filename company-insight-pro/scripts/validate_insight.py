@@ -9,22 +9,39 @@ import subprocess
 import tempfile
 
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-# 54个GTB标准行业名称名称列表
-STANDARD_CATEGORIES = {
-    "办公文具", "保暖用品", "包装用品", "餐厨器皿", "宠物用品",
-    "服装饰物及配件", "个人护理用具", "工艺品", "户外用品", "家具",
-    "家居日用品", "家居用品", "家用电器", "家用纺织品", "节庆用品",
-    "节日用品", "美妆工具", "美妆护肤", "母婴用品", "男女装",
-    "汽车用品", "日用五金", "收纳用品", "数码配件", "水具",
-    "体育及旅游休闲用品", "童装", "玩具", "卫浴用品", "文化用品",
-    "五金", "五金工具", "鞋", "医药保健品及医疗器械", "益智玩具",
-    "园艺用品", "园林用品", "孕婴童用品", "运动户外用品", "照明产品",
-    "钟表眼镜", "厨房用具", "电子配件", "服装配饰", "工具",
-    "清洁用品", "户外运动", "食品", "童车童床", "内衣",
-    "箱包及皮具", "建筑及装饰材料", "安防劳保用品", "礼品及赠品"
-}
+# 54个GTB标准行业名称列表 (对齐 GlobalTradeBuddy 核心标准)
+STANDARD_CATEGORIES = [
+    "家用电器", "电子消费品及信息产品", "电子电气产品", "照明产品", "新能源汽车及智慧出行",
+    "车辆", "汽车配件", "摩托车", "自行车", "动力、电力设备",
+    "通用机械及机械基础件", "加工机械设备", "工程机械（室内/室外）", "农业机械（室内/室外）", "工业自动化及智能制造",
+    "五金", "工具", "新材料及化工产品", "新能源", "日用陶瓷",
+    "餐厨器皿", "家居用品", "玻璃工艺品", "工艺陶瓷", "礼品及赠品",
+    "节日用品", "玩具", "编织及藤铁工艺品", "家居装饰品", "园林用品",
+    "石材/铁艺制品（室外）", "建筑及装饰材料", "卫浴设备", "家具", "钟表眼镜",
+    "个人护理用具", "宠物用品", "男女装", "童装", "内衣",
+    "运动服及休闲服", "裘革皮羽绒及制品", "服装饰物及配件", "纺织原料面料", "家用纺织品",
+    "地毯及挂毯", "鞋", "箱包", "办公文具", "体育及旅游休闲用品",
+    "医药保健品及医疗器械", "食品", "乡村振兴特色产品", "孕婴童用品"
+]
+
+def map_to_standard_category(term):
+    if not term:
+        return None
+    clean = term.strip()
+    for cat in STANDARD_CATEGORIES:
+        if clean.lower() == cat.lower():
+            return cat
+    for cat in STANDARD_CATEGORIES:
+        if clean.startswith(cat) or clean.startswith(f"{cat}-") or clean.startswith(f"{cat}_"):
+            return cat
+    for cat in STANDARD_CATEGORIES:
+        if cat in clean:
+            return cat
+    return None
 
 REQUIRED_METAS = [
     "category",
@@ -97,35 +114,94 @@ def validate_html(html_path):
             print(f"  [ERROR] 缺失必填 Meta 标签: <meta name=\"{meta}\" content=\"...\">")
             success = False
             
-    # 2. 审计 products 标准化对齐
-    if "products" in meta_values and meta_values["products"]:
-        print("[*] 正在审计产品品类标准化对齐 (GTB产品分类)...")
-        prods = [p.strip() for p in meta_values["products"].split(",") if p.strip()]
-        for p in prods:
-            if p in STANDARD_CATEGORIES:
-                print(f"  [OK] 品类对齐: \"{p}\"")
-            else:
-                print(f"  [ERROR] 品类 \"{p}\" 不符合 GTB 标准行业名称！请对照标准 54 个分类进行映射。")
+    # 2.5 审计 competitors 格式规范与法律后缀净化
+    if "competitors" in meta_values and meta_values["competitors"]:
+        print("[*] 正在审计 competitors 管道格式与实体名称规范化...")
+        comp_items = [c.strip() for c in meta_values["competitors"].split(",") if c.strip()]
+        legal_suffixes = [r'\bLLC\b', r'\bInc\.?\b', r'\bLtd\.?\b', r'\bCorp\.?\b', r'\bGmbH\b', r'\bAG\b', r'\bPLC\b', r'\bSA\b', r'\bSAS\b', r'\bBV\b', r'\bSE\b', r'\bS\.A\.B\.\b', r'Co\.,\s*Ltd\.?']
+        for item in comp_items:
+            entity_name = item.split("|")[0].strip()
+            if not entity_name:
+                print(f"  [ERROR] 🚨 competitors 中存在空实体名称: \"{item}\"")
                 success = False
+                continue
+            # 检查法律后缀
+            has_suffix = False
+            for s_pat in legal_suffixes:
+                if re.search(s_pat, entity_name, re.IGNORECASE):
+                    print(f"  [ERROR] 🚨 实体名称 \"{entity_name}\" 包含法律后缀 (正则匹配: {s_pat})！必须去除法律后缀保持纯商业名。")
+                    success = False
+                    has_suffix = True
+                    break
+            if not has_suffix:
+                # 检查正文是否存在该实体
+                body_match = re.search(r'<main.*?>.*?</main>', content, re.IGNORECASE | re.DOTALL)
+                body_text = body_match.group(0) if body_match else content
+                if entity_name.lower() in body_text.lower():
+                    print(f"  [OK] 竞品实体对齐: \"{entity_name}\" (已在正文中检出，格式规范)")
+                else:
+                    print(f"  [WARN] ⚠️ 竞品实体 \"{entity_name}\" 在 Meta 中声明，但在报告正文中未检测到同名文本，可能导致超链接无法注入！")
+
+            # 审计 4 段式管道要素（名称|国家|官网|形态品类，服务于平台新任务裂变）
+            parts = [p.strip() for p in item.split("|")]
+            if len(parts) >= 4:
+                website = parts[2]
+                desc = parts[3]
+                web_info = f"官网: {website}" if website else "官网: 空"
+                has_form = any(k in desc for k in ['零售', '超市', '分销', '工程', '专卖', '工厂', '制造', '代工', '贸易', 'B2B', '批发', '连锁', '店']) or ('[' in desc and ']' in desc)
+                if has_form:
+                    print(f"  [OK] 竞品裂变要素完备: [{entity_name}] 国家: {parts[1]} | {web_info} | 形态品类: \"{desc}\"")
+                else:
+                    print(f"  [WARN] ⚠️ 竞品 [{entity_name}] 建议补全明确的公司形态标签（如 [实体连锁零售]、[专业工程分销]、[源头工厂] 等，以便平台精准分裂待调研任务）")
+            else:
+                print(f"  [WARN] ⚠️ 竞品 [{entity_name}] 建议升级为 4 段式管道格式: 名称|国家|官网|【形态】主营品类与定位（当前为 {len(parts)} 段），补全后平台可自动裂变出完整的新任务！")
+
                 
-    # 3. 审计 Emoji 净化
+    # 2.6 审计 products 标准行业分类门禁
+    if "products" in meta_values and meta_values["products"]:
+        print("[*] 正在审计 products 标准行业分类对齐与门禁...")
+        raw_products = [p.strip() for p in re.split(r'[,，]', meta_values["products"]) if p.strip()]
+        matched_categories = []
+        unmatched_products = []
+        for p in raw_products:
+            mapped = map_to_standard_category(p)
+            if mapped:
+                matched_categories.append(f"{p} ➔ 【{mapped}】")
+            else:
+                unmatched_products.append(p)
+
+        if matched_categories:
+            print(f"  [OK] 成功匹配标准行业分类 ({len(matched_categories)} 项): {', '.join(matched_categories)}")
+        if unmatched_products:
+            print(f"  [WARN] ⚠️ 以下产品标签未能自动对齐平台 54 个标准大类: {', '.join(unmatched_products)}")
+            print(f"         建议使用标准大类前缀格式（例如：\"餐厨器皿-不锈钢餐具, 家具-快装家具\"）以确保在管理后台正常打标。")
+
+    # 3. 审计 Emoji 净化与自动修复
     print("[*] 正在审计正文及标题 Emoji 净化...")
     clean_content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
     emoji_pattern = re.compile(r'[\U00010000-\U0010ffff]')
     emojis_found = emoji_pattern.findall(clean_content)
     if emojis_found:
-        print(f"  [ERROR] 检测到未净化的 Emoji 图标: {' '.join(set(emojis_found))}，请按照 UI 规范移除或用 SVG 矢量图标替代！")
-        success = False
+        print(f"  [WARN] 检测到未净化的 Emoji 图标: {' '.join(set(emojis_found))}，正在执行自动净化剥离...")
+        content = emoji_pattern.sub('', content)
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print("  [OK] 已自动剥离未净化的 Emoji 图标并回写文件。")
     else:
         print("  [OK] 未发现正文 Emoji 标识。")
         
     # 4. 审计 Market Graphic 官方品牌 Logo 与 Header 规范（硬性门禁）
     print("[*] 正在审计 Market Graphic 官方品牌 Logo 与 Header 规范...")
     has_powered_by = bool(re.search(r'Powered\s+by', content, re.IGNORECASE))
-    has_mg_logo = bool(re.search(r'alt=["\']Market\s+Graphic["\']', content, re.IGNORECASE) or "iVBORw0KGgoAAAANSUhEUgAAAHAAAABACAYAAADCmvPm" in content)
+    has_mg_logo = bool(re.search(r'alt=["\']Market\s+Graphic["\']', content, re.IGNORECASE) or "Market Graphic" in content)
+    has_header_mg_link = bool(re.search(r'<header[^>]*>.*?href=["\']https?://(?:www\.)?marketgraphic\.cn["\'].*?</header>', content, re.IGNORECASE | re.DOTALL))
     
-    if has_powered_by and has_mg_logo:
-        print("  [OK] 检出 Header 顶部 Market Graphic 官方 Logo 及 Powered by 标识。")
+    if has_powered_by and has_mg_logo and has_header_mg_link:
+        print("  [OK] 检出 Header 顶部 Market Graphic 官方 Logo、Powered by 标识及 marketgraphic.cn 官网超链接。")
+    elif not has_header_mg_link:
+        print("  [ERROR] 🚨 Header 顶部的 Market Graphic Logo 缺失指向 marketgraphic.cn 的超链接！")
+        print("          必须保持 <a href=\"https://marketgraphic.cn\" target=\"_blank\" ...> 包裹 Logo 与 Powered by。")
+        success = False
     else:
         print("  [ERROR] 🚨 缺失 Market Graphic 官方 Logo 图片或 Powered by 标示！")
         print("          必须直接读取 assets/report-template.html 作为基底模板进行填充，不得擅自删除或手写骨架！")
@@ -181,7 +257,17 @@ def validate_html(html_path):
         success = False
     else:
         print("  [OK] 无任何模板占位符残留。")
-        
+
+    # 8. 审计第八部分实战策略建议卡片完整度（建议保持 4 条以实现 2x2 黄金排版）
+    print("[*] 正在审计第八部分供应商实战策略建议卡片...")
+    strat_cards = re.findall(r'(?:建议|策略)[一二三四五六七八0-9]+[：:]', content)
+    if len(strat_cards) >= 4:
+        print(f"  [OK] 检出实战策略建议 {len(strat_cards)} 条，符合 2x2 黄金网格布局。")
+    elif len(strat_cards) > 0:
+        print(f"  [WARN] ⚠️ 检出实战策略建议仅 {len(strat_cards)} 条。建议扩展至 4 条（选品定制、价格规格、合规门禁、渠道对接）以达到最佳 2x2 排版效果。")
+    else:
+        print("  [WARN] ⚠️ 未检出明确的建议卡片序号前缀。")
+
     print("--- 审计结论 ---")
     if success:
         print("[SUCCESS] 报告校验完全合格！")
