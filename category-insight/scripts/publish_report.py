@@ -15,14 +15,15 @@ import urllib.error
 
 # 尝试导入 embed_images 模块以提供自愈与压缩能力
 try:
-    from embed_images import embed_images_in_html, sanitize_existing_base64
+    from embed_images import embed_images_in_html, sanitize_existing_base64, ensure_official_mg_logo
 except ImportError:
     sys.path.insert(0, os.path.dirname(__file__))
     try:
-        from embed_images import embed_images_in_html, sanitize_existing_base64
+        from embed_images import embed_images_in_html, sanitize_existing_base64, ensure_official_mg_logo
     except Exception:
         embed_images_in_html = None
         sanitize_existing_base64 = None
+        ensure_official_mg_logo = None
 
 def load_env(env_path):
     env_vars = {}
@@ -87,6 +88,18 @@ def publish_report_file(html_path, target_url=None, api_key=None):
     if sanitize_existing_base64:
         html_content = sanitize_existing_base64(html_content)
 
+    # 强制自愈：无条件检测并补全/修复 Market Graphic 官方完整高清 Base64 Logo，并同步回写本地
+    if ensure_official_mg_logo:
+        fixed_content = ensure_official_mg_logo(html_content)
+        if fixed_content != html_content:
+            html_content = fixed_content
+            try:
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+                print(f"[OK] Auto-healed official Market Graphic Logo and synchronized to: {os.path.basename(html_path)}")
+            except Exception as e:
+                print(f"[WARN] Failed to write back healed logo to local file: {e}")
+
     # 强制修正：category meta 必须为 "product"（服务端枚举校验）
     html_content = re.sub(
         r'(<meta\s+name=["\']category["\']\s+content=["\'])[^"\']*(["\'])',
@@ -112,10 +125,12 @@ def publish_report_file(html_path, target_url=None, api_key=None):
             import openpyxl
             wb = openpyxl.load_workbook(ref_xlsx, data_only=True)
             ws = wb.active
-            std_categories = set()
             for row in ws.iter_rows(min_row=2, values_only=True):
-                if row and row[0]:
-                    std_categories.add(str(row[0]).strip())
+                if row:
+                    if len(row) > 1 and row[1]:
+                        std_categories.add(str(row[1]).strip())
+                    if row[0]:
+                        std_categories.add(str(row[0]).strip())
             
             if products:
                 prod_list = [p.strip() for p in products.split(',') if p.strip()]
@@ -167,6 +182,7 @@ def publish_report_file(html_path, target_url=None, api_key=None):
             if res.get('success'):
                 report_id = res.get('reportId') or res.get('id') or 'N/A'
                 print(f"[OK] Report published successfully! ID: {report_id}")
+                print(f"[OK] Online URL: https://marketgraphic.cn/reports/{report_id}")
                 return True
             else:
                 print(f"[ERR] Failed to publish: {res.get('error')}")

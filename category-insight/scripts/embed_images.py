@@ -104,6 +104,47 @@ def sanitize_existing_base64(html_content):
     
     return html_content
 
+def ensure_official_mg_logo(html_content):
+    """自动检测并修复/补全 Market Graphic 官方完整高清 Base64 Logo"""
+    tpl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "report-template.html")
+    if not os.path.exists(tpl_path):
+        return html_content
+
+    try:
+        with open(tpl_path, "r", encoding="utf-8") as f:
+            tpl_text = f.read()
+        m = re.search(r'class="powered-by-mg"[^>]*>.*?<img\s+src="([^"]+)"', tpl_text, re.DOTALL)
+        if not m:
+            return html_content
+        full_logo_src = m.group(1)
+        
+        def fix_img_src(img_tag):
+            src_m = re.search(r'src=["\']([^"\']+)["\']', img_tag)
+            if not src_m or len(src_m.group(1)) < 15000 or not src_m.group(1).startswith("data:image/png;base64,"):
+                print("[OK] Auto-healed Market Graphic Logo from official template!")
+                if src_m:
+                    return img_tag[:src_m.start(1)] + full_logo_src + img_tag[src_m.end(1):]
+                else:
+                    return img_tag.replace("<img", f'<img src="{full_logo_src}"', 1)
+            return img_tag
+
+        # 1. 匹配包含 alt="Market Graphic" 的 img 标签
+        html_content = re.sub(r'<img\s+[^>]*alt=["\']Market Graphic["\'][^>]*>', lambda m: fix_img_src(m.group(0)), html_content, flags=re.IGNORECASE)
+        html_content = re.sub(r'<img\s+[^>]*src=["\'][^"\']+["\'][^>]*alt=["\']Market Graphic["\'][^>]*>', lambda m: fix_img_src(m.group(0)), html_content, flags=re.IGNORECASE)
+
+        # 2. 匹配包含 powered-by-mg 或指向 marketgraphic.cn 的 <a> 链接内部的 <img>
+        def fix_container(m):
+            container = m.group(0)
+            return re.sub(r'<img\s+[^>]*>', lambda im: fix_img_src(im.group(0)), container, count=1, flags=re.IGNORECASE)
+
+        html_content = re.sub(r'<a\s+[^>]*class=["\'][^"\']*powered-by-mg[^"\']*["\'][^>]*>.*?</a>', fix_container, html_content, flags=re.IGNORECASE | re.DOTALL)
+        html_content = re.sub(r'<a\s+[^>]*href=["\']https?://marketgraphic\.cn["\'][^>]*>.*?</a>', fix_container, html_content, flags=re.IGNORECASE | re.DOTALL)
+    except Exception as e:
+        print(f"[WARN] Failed to auto-heal Market Graphic logo: {e}")
+
+    return html_content
+
+
 def verify_all_embedded_images(html_content):
     """自检 HTML 中所有嵌入图片的有效性"""
     pattern = re.compile(r'<img\s+[^>]*src=["\']data:image/([^;]+);base64,([^"\']+)["\']', re.IGNORECASE)
@@ -142,6 +183,9 @@ def embed_images_in_html(html_path):
 
     # 1. 先进行现有 Base64 前缀清洗
     html_content = sanitize_existing_base64(html_content)
+
+    # 1.1 自动自愈 Market Graphic 官方 Logo（防止手写截断或缺失）
+    html_content = ensure_official_mg_logo(html_content)
 
     # 2. 正则寻找相对路径本地图片
     img_pattern = re.compile(r'(<img\s+[^>]*src=["\'])([^"\']+\.(?:png|jpg|jpeg|gif|webp|svg))(["\'][^>]*>)', re.IGNORECASE)
