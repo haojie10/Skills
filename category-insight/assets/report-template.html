@@ -379,53 +379,112 @@
         /* 概念产品专区 */
         .concept-card {
             background: #ffffff;
-            border: 1px solid rgba(var(--primary-rgb), 0.2);
+            border: 1px solid rgba(var(--primary-rgb), 0.22);
             border-radius: 18px;
             overflow: hidden;
             box-shadow: var(--shadow-sm);
             margin-bottom: 2.25rem;
             display: grid;
-            grid-template-columns: 1fr 1.15fr;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.28fr);
             gap: 0;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
-        @media (max-width: 860px) {
+        @media (max-width: 900px) {
             .concept-card {
                 grid-template-columns: 1fr;
             }
         }
 
+        .concept-image-wrap,
         .concept-visual {
-            background: #fbf7f2;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            border-right: 1px solid var(--panel-border);
-            overflow: hidden;
             position: relative;
-            min-height: 320px;
-        }
-
-        .concept-visual img {
             width: 100%;
             height: 100%;
             min-height: 320px;
-            object-fit: cover;
-            display: block;
-            transition: transform 0.3s ease;
+            max-height: 520px;
+            background: #1a1a1a;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-right: 1px solid var(--panel-border);
+            box-sizing: border-box;
         }
 
-        .concept-visual:hover img {
+        .concept-image-wrap img,
+        .concept-visual img {
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            object-fit: cover;
+            object-position: center 30%;
+            display: block;
+            transition: transform 0.35s ease;
+        }
+
+        .concept-card:hover .concept-image-wrap img,
+        .concept-card:hover .concept-visual img {
             transform: scale(1.02);
         }
 
         .concept-body {
-            padding: 1.85rem 2.2rem;
+            padding: 2rem 2.25rem;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            justify-content: flex-start;
+            min-width: 0;
+            overflow: hidden;
+            box-sizing: border-box;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .concept-tag {
+            display: inline-block;
+            align-self: flex-start;
+            background: rgba(var(--primary-rgb), 0.08);
+            color: var(--primary);
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.3rem 0.85rem;
+            border-radius: 999px;
+            border: 1px solid rgba(var(--primary-rgb), 0.2);
+            margin-bottom: 0.65rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .concept-name,
+        .concept-heading {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.32rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            line-height: 1.35;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .concept-field {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.85rem;
+            line-height: 1.6;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .concept-field strong {
+            color: var(--text-primary);
+        }
+
+        .concept-field p {
+            margin-bottom: 0.4rem;
+            line-height: 1.6;
         }
 
         .concept-num {
@@ -436,14 +495,6 @@
             letter-spacing: 0.08em;
             text-transform: uppercase;
             margin-bottom: 0.35rem;
-        }
-
-        .concept-heading {
-            font-family: 'Outfit', sans-serif;
-            font-size: 1.35rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-bottom: 0.85rem;
         }
 
         .concept-section-title {
@@ -460,6 +511,8 @@
             font-size: 0.88rem;
             color: var(--text-secondary);
             line-height: 1.55;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         .concept-metrics-row {

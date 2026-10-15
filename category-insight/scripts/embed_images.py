@@ -120,7 +120,24 @@ def ensure_official_mg_logo(html_content):
         
         def fix_img_src(img_tag):
             src_m = re.search(r'src=["\']([^"\']+)["\']', img_tag)
-            if not src_m or len(src_m.group(1)) < 15000 or not src_m.group(1).startswith("data:image/png;base64,"):
+            should_replace = False
+            if not src_m:
+                should_replace = True
+            else:
+                curr_src = src_m.group(1)
+                if curr_src != full_logo_src:
+                    try:
+                        if curr_src.startswith("data:image/png;base64,"):
+                            b64_part = curr_src.split("base64,")[1]
+                            decoded = base64.b64decode(b64_part)
+                            if len(decoded) < 10000:
+                                should_replace = True
+                        else:
+                            should_replace = True
+                    except Exception:
+                        should_replace = True
+
+            if should_replace:
                 print("[OK] Auto-healed Market Graphic Logo from official template!")
                 if src_m:
                     return img_tag[:src_m.start(1)] + full_logo_src + img_tag[src_m.end(1):]

@@ -77,6 +77,7 @@ def get_core_tokens(name):
         'enterprise', 'enterprises', 'company', 'brothers', 'spa',
         'comercial', 'comercio', 'industrias', 'industria', 'sociedad',
         'importadora', 'exportadora', 'corporacion', 'distribuidora',
+        'import', 'export', 'grosshandel', 'großhandel', 'handel', 'handelsgesellschaft',
         '360°', '企业战略情报报告', '战略情报报告', '客户洞察', '深度研报'
     }
     tokens = [w for w in cleaned.split() if w not in common_words and len(w) > 1]
@@ -98,8 +99,9 @@ def check_company_report(company_name, api_url=None, api_key=None):
 
     all_reports = []
     page = 1
+    target_category = 'customer'
     while True:
-        url = f"{gtb_api_url.rstrip('/')}/api/agent/reports?page={page}&pageSize=200"
+        url = f"{gtb_api_url.rstrip('/')}/api/agent/reports?page={page}&pageSize=200&category={target_category}"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {agent_api_key}"})
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
@@ -119,9 +121,12 @@ def check_company_report(company_name, api_url=None, api_key=None):
     if not all_reports:
         return False, None
 
-    # 精确匹配、双向包含与核心分词匹配
+    # 精确匹配、双向包含与核心分词匹配（严格限制仅比对 customer 类型的企业客户报告）
     matched = None
     for r in all_reports:
+        # 强安全隔离：非客户调研报告（如品类出海洞察 product 报告）坚决不参与企业查重！
+        if r.get('category') and r.get('category') != target_category:
+            continue
         title = (r.get('title') or '')
         rep_company = (r.get('company_name') or '')
         
@@ -190,17 +195,17 @@ def main():
         rep_date = report.get('createdAt') or report.get('publishedAt') or '近期'
 
         print("\n========================================================")
-        print("[发现重复/已存在] 平台报告大厅中已收录该企业报告！")
+        print("[发现重复/已存在] 平台报告大厅中已收录该企业客户报告！")
         print(f"  • 报告标题: 《{rep_title}》")
         print(f"  • 报告 ID  : {rep_id}")
         print(f"  • 市场区域: {rep_region}")
         print(f"  • 发布时间: {rep_date}")
         print(f"  • 在线链接: {rep_url}")
         print("========================================================")
-        print(f"\n⚠️ 提示：若需覆盖更新，请在发布时指定参数: --target-id {rep_id}\n")
+        print(f"\n[提示] 平台已存在该企业的战略情报报告。仅在明确需要对该企业报告进行全面迭代升级时，方可指定 --target-id {rep_id}；若为不同主题或品类调研，请勿覆盖。\n")
         sys.exit(10)  # 退出码 10 表示查重命中（已存在）
     else:
-        print("\n[无重复] 未发现目标公司/品牌已发布的报告，可安全新建。\n")
+        print("\n[无重复] 未发现目标公司已发布的战略情报报告，可安全新建。\n")
         sys.exit(0)  # 退出码 0 表示无重复（安全新建）
 
 
