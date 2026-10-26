@@ -77,7 +77,7 @@ python C:/Users/066/.gemini/config/skills/category-insight/scripts/publish_repor
   1. **线下实体渠道**（如 MediaMarkt / Target / Dollarama / Costco 等）：**必须配置 4 张大图**（1 张商超门头/展柜 Hero Banner + 3 张独立反堆料产品概念升级款）；
   2. **纯电商渠道**（如 Amazon / 独立站等）：**标配 3 张独立产品概念图**。
 - **生图降级与严格串行标准（铁律）**：
-  - 原生生图配额耗尽时，自动调用标准脚本 `C:/Users/066/.gemini/config/skills/category-insight/scripts/flow_image_generator.py`（直连 Chrome 9222 端口）；
+  - 原生生图配额耗尽时，自动调用标准脚本 `~/.gemini/config/skills/category-insight/scripts/flow_image_generator.py`（直连 Chrome 9222 端口）；
   - **必须严格遵循单张阻塞式串行执行流程**：
     `[Prompt 注入] -> [点击生成] -> [阻塞监听 naturalWidth >= 500 & complete] -> [HTTP 拉取无损原图流] -> [PIL 压缩落盘] -> [磁盘校验通过] -> [冷却 3 秒] -> [才允许开始下一张]`；
   - **严禁并发或在上一张未完成时抢跑写入下一张 Prompt**，彻底杜绝 Flow 任务被冲掉、重复生图和图片错位。

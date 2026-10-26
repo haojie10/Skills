@@ -1,162 +1,110 @@
 # -*- coding: utf-8 -*-
 """
-Google Flow 官方标准生图引擎 (flow_image_generator.py)
-用于 category-insight 技能的可靠生图与无损原图拉取。
+Google Flow 生图适配器 (flow_image_generator.py)
+在 macOS 环境下自动委托并执行原生的 Node.js AppleScript/Chrome 自动化生图驱动 (google_flow_native.js)，
+无需启动 Playwright 调试端口或单独配置 CDP，完美适配本地 Chrome。
 
-【核心工作模式】：
-严格单张阻塞式串行执行：
-[输入 Prompt] -> [提交生成] -> [阻塞等待云端渲染完成 (naturalWidth>=1000 & complete)] -> 
-[直接 HTTP 拉取无损原图流] -> [PIL 高质量等比压缩落盘] -> [落盘校验通过] -> [冷却 3 秒] -> [允许下一张]
+支持功能：
+1. 命令行调用：python flow_image_generator.py <prompt> <output_path>
+2. Python API 异步调用：await generate_single_image(prompt, output_path)
+3. 序列化串行生图：await generate_images_sequence(items)
+4. 支持自动调用 embed_images 中的 PIL 等比压缩与体积优化
 """
 
 import os
 import sys
 import time
+import subprocess
 import asyncio
 from io import BytesIO
-from PIL import Image
-from playwright.async_api import async_playwright
 
-def compress_image_to_jpeg(image_bytes: bytes, max_width: int = 900, quality: int = 82) -> bytes:
-    """
-    高质量等比压缩图片为 JPEG 格式
-    """
-    im = Image.open(BytesIO(image_bytes)).convert("RGB")
-    if im.width > max_width:
-        w = max_width
-        h = int(im.height * (max_width / im.width))
-        im = im.resize((w, h), Image.Resampling.LANCZOS)
-    buf = BytesIO()
-    im.save(buf, format="JPEG", quality=quality, optimize=True)
-    return buf.getvalue()
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 
-async def get_flow_page(context):
-    """
-    在已连接的 Chrome CDP 实例中寻找 Google Flow 标签页
-    """
-    for pg in context.pages:
-        if "flow.google.com" in pg.url:
-            return pg
-    return None
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+MAC_NATIVE_SCRIPT = os.path.join(CURRENT_DIR, "google_flow_native.js")
 
-async def get_rendered_image_urls(page) -> set:
-    """
-    获取 Flow 页面上所有已完全渲染成功的高清大图 URL (naturalWidth >= 500 且 complete)
-    """
-    return set(await page.evaluate('''() => {
-        return Array.from(document.querySelectorAll('img'))
-            .filter(i => {
-                const src = i.src || '';
-                return src.startsWith('http') 
-                    && !src.includes('avatar') 
-                    && !src.includes('googleusercontent.com/ogw')
-                    && !src.includes('favicon')
-                    && i.complete 
-                    && i.naturalWidth >= 500;
-            })
-            .map(i => i.src);
-    }'''))
+
+def compress_image_to_jpeg(image_path: str, max_width: int = 900, quality: int = 82) -> bool:
+    """若存在 PIL，对落盘图片进行等比缩放与 JPEG 质量压缩，严格控制体积"""
+    if not HAS_PIL or not os.path.exists(image_path):
+        return False
+    try:
+        im = Image.open(image_path).convert("RGB")
+        if im.width > max_width:
+            w = max_width
+            h = int(im.height * (max_width / im.width))
+            im = im.resize((w, h), Image.Resampling.LANCZOS)
+        im.save(image_path, format="JPEG", quality=quality, optimize=True)
+        return True
+    except Exception as e:
+        print(f"[WARN] PIL 压缩异常: {e}")
+        return False
+
+
+def run_mac_native_flow(prompt: str, output_path: str, timeout_seconds: int = 120) -> bool:
+    """调用 macOS 专属 google_flow_native.js 执行生图"""
+    if not os.path.exists(MAC_NATIVE_SCRIPT):
+        raise FileNotFoundError(f"未找到 macOS 专用脚本: {MAC_NATIVE_SCRIPT}")
+
+    cmd = [
+        "node",
+        MAC_NATIVE_SCRIPT,
+        "--prompt", prompt,
+        "-o", output_path,
+        "--timeout", str(timeout_seconds * 1000)
+    ]
+
+    print(f"[FlowEngine:Mac] 启动 macOS 原生 Flow 驱动: {output_path}")
+    res = subprocess.run(cmd, capture_output=True, text=True)
+
+    if res.stdout:
+        print(res.stdout.strip())
+    if res.returncode != 0:
+        if res.stderr:
+            print(f"[FlowEngine:Mac] 错误输出: {res.stderr.strip()}", file=sys.stderr)
+        return False
+
+    if not os.path.exists(output_path) or os.path.getsize(output_path) < 1024:
+        print(f"[FlowEngine:Mac] 输出文件异常或不存在: {output_path}", file=sys.stderr)
+        return False
+
+    # PIL 进一步优化压缩与规范化尺寸
+    compress_image_to_jpeg(output_path)
+    file_size_kb = os.path.getsize(output_path) / 1024
+    print(f"[FlowEngine:Mac] [OK] 生图成功落盘: {output_path} ({file_size_kb:.1f} KB)")
+    return True
+
 
 async def generate_single_image(
     prompt: str,
     output_path: str,
     cdp_url: str = "http://127.0.0.1:9222",
-    max_wait_seconds: int = 90,
+    max_wait_seconds: int = 120,
     max_width: int = 900,
     quality: int = 82
 ) -> bool:
     """
-    单张阻塞式生图：生成完毕并保存落盘后才返回 True
+    单张阻塞式生图接口（与原 Python 接口完全保持兼容）
     """
-    async with async_playwright() as p:
-        browser = await p.chromium.connect_over_cdp(cdp_url)
-        context = browser.contexts[0]
-        page = await get_flow_page(context)
-        if not page:
-            raise RuntimeError("未在 Chrome CDP 中检测到 Google Flow 页面 (https://flow.google.com)")
+    loop = asyncio.get_event_loop()
+    success = await loop.run_in_executor(
+        None,
+        run_mac_native_flow,
+        prompt,
+        output_path,
+        max_wait_seconds
+    )
+    if not success:
+        raise RuntimeError(f"Google Flow 生图失败: {output_path}")
 
-        await page.bring_to_front()
-        await asyncio.sleep(0.5)
+    # 冷却 3 秒，防止连续打扰界面
+    await asyncio.sleep(3)
+    return True
 
-        # 1. 记录当前已有的大图 URL 快照
-        before_urls = await get_rendered_image_urls(page)
-        print(f"[FlowEngine] 开始生成前已存在 {len(before_urls)} 张高清大图")
-
-        # 2. 清空并写入新的 Prompt
-        await page.evaluate('''() => {
-            const el = document.querySelector("div.ProseMirror");
-            if (el) {
-                el.focus();
-                document.execCommand("selectAll", false, null);
-                document.execCommand("delete", false, null);
-            }
-        }''')
-        await asyncio.sleep(0.3)
-
-        p_esc = prompt.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ')
-        await page.evaluate(f'''() => {{
-            const el = document.querySelector("div.ProseMirror");
-            if (el) {{
-                el.focus();
-                document.execCommand("insertText", false, "{p_esc}");
-            }}
-        }}''')
-        await asyncio.sleep(0.5)
-
-        # 3. 提交生成指令
-        gen_btn = await page.query_selector('button[aria-label="开始生成"], button[aria-label="Start generation"]')
-        if gen_btn:
-            await gen_btn.click()
-            print("[FlowEngine] 点击生成按钮 (Start generation)")
-        else:
-            await page.keyboard.press('Enter')
-            print("[FlowEngine] 按下 Enter 提交生成")
-
-        # 4. 阻塞轮询，直到检测到全新且已完整渲染的大图 URL
-        print(f"[FlowEngine] 等待云端生成与渲染完成 (最多 {max_wait_seconds} 秒)...")
-        start_time = time.time()
-        new_url = None
-
-        while time.time() - start_time < max_wait_seconds:
-            await asyncio.sleep(3)
-            elapsed = int(time.time() - start_time)
-            current_urls = await get_rendered_image_urls(page)
-            diff = current_urls - before_urls
-            if diff:
-                new_url = list(diff)[0]
-                print(f"[FlowEngine] 第 {elapsed} 秒成功捕获到全新渲染大图 URL: {new_url[:70]}...")
-                # 额外等待 2 秒确保流传输完全稳定
-                await asyncio.sleep(2)
-                break
-            print(f"[FlowEngine] 正在渲染中... ({elapsed}s)")
-
-        if not new_url:
-            raise TimeoutError(f"Flow 生成超时 ({max_wait_seconds}s)，未能捕获到新生成的高清原图！")
-
-        # 5. 通过网络层直接下载原图二进制流
-        resp = await context.request.get(new_url)
-        if resp.status != 200:
-            raise RuntimeError(f"下载原图失败，HTTP 状态码: {resp.status}")
-        
-        raw_bytes = await resp.body()
-        if len(raw_bytes) < 10240:
-            raise ValueError(f"下载的原图字节异常过小 ({len(raw_bytes)} 字节)，可能非有效图片！")
-
-        print(f"[FlowEngine] 成功拉取无损原图流: {len(raw_bytes)/1024:.1f} KB")
-
-        # 6. PIL 高质量等比压缩与落盘
-        comp_bytes = compress_image_to_jpeg(raw_bytes, max_width=max_width, quality=quality)
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        with open(output_path, "wb") as f:
-            f.write(comp_bytes)
-
-        # 7. 终检磁盘文件
-        im = Image.open(output_path)
-        print(f"[FlowEngine] [OK] 图片成功落盘: {output_path} (尺寸: {im.size}, 大小: {len(comp_bytes)/1024:.1f} KB)")
-        
-        # 8. 单张完成后执行 3 秒冷却，为下一次调用提供干净的上下文
-        await asyncio.sleep(3)
-        return True
 
 async def generate_images_sequence(items: list, cdp_url: str = "http://127.0.0.1:9222") -> bool:
     """
@@ -168,26 +116,26 @@ async def generate_images_sequence(items: list, cdp_url: str = "http://127.0.0.1
         print(f"[任务 {idx+1}/{len(items)}] 开始生成: {item.get('id', '')} - {item.get('name', '')}")
         print(f"输出路径: {item['output']}")
         print(f"========================================================")
-        
+
         success = False
         for attempt in range(1, 4):
             try:
                 success = await generate_single_image(
                     prompt=item["prompt"],
-                    output_path=item["output"],
-                    cdp_url=cdp_url
+                    output_path=item["output"]
                 )
                 if success:
                     break
             except Exception as e:
-                print(f"[FlowEngine] [WARN] 第 {idx+1} 张第 {attempt} 次生成异常: {e}")
+                print(f"[FlowEngine:Mac] [WARN] 第 {idx+1} 张第 {attempt} 次生成异常: {e}")
                 await asyncio.sleep(4)
 
         if not success:
             raise RuntimeError(f"第 {idx+1} 张图片生成失败，流程中止")
 
-    print("\n[FlowEngine] [ALL SUCCESS] 全部序列图片已严格按顺序生成并落盘完毕！")
+    print("\n[FlowEngine:Mac] [ALL SUCCESS] 全部序列图片已生成并压缩完毕！")
     return True
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:

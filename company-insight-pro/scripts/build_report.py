@@ -67,13 +67,16 @@ def clean_legal_suffix(name):
     """去除公司名称中的常见法律后缀"""
     if not name:
         return ""
+    # 严格区分大小写去除 AG, SA, SE（避免误伤 Ag = Agriculture 等行业前缀）
+    cleaned = re.sub(r'\b(AG|SA|SE)\b', '', name)
     cleaned = re.sub(
-        r'\b(AG|GmbH|LLC|Inc\.?|Ltd\.?|Corp\.?|PLC|SA|SAS|BV|SE|S\.A\.B\.|Pty\.?|Co\.,\s*Ltd\.?)\b',
+        r'\b(GmbH|LLC|Inc\.?|Ltd\.?|Corp\.?|PLC|SAS|BV|S\.A\.B\.|Pty\.?|Co\.,\s*Ltd\.?)\b',
         '',
-        name,
+        cleaned,
         flags=re.IGNORECASE
     )
-    return re.sub(r'\s+', ' ', cleaned).strip()
+    return re.sub(r'\s+', ' ', cleaned).strip(' -_')
+
 
 
 def strip_html_tags(text):
@@ -276,21 +279,57 @@ def generate_competitors_html(comp_list):
 
 
 def generate_brand_table_html(brand_table_list):
-    """生成品牌与中国供应链替代机会的精美表格"""
-    if not brand_table_list or not isinstance(brand_table_list, list):
+    """生成品牌与中国供应链替代机会的精美表格及品类架构图"""
+    if not brand_table_list:
         return ""
+    if isinstance(brand_table_list, str) and "<table" in brand_table_list:
+        return brand_table_list
+
+    if isinstance(brand_table_list, dict):
+        brand_table_list = [brand_table_list]
+    elif not isinstance(brand_table_list, list):
+        return ""
+
     rows = []
+    matrix_chips = []
     for item in brand_table_list:
-        cat = item.get("category") or item.get("product", "")
-        brands = item.get("brands") or item.get("channel", "")
-        oem = item.get("oem") or item.get("opportunity", "")
+        if isinstance(item, dict):
+            cat = item.get("category") or item.get("product") or item.get("品类") or ""
+            brands = item.get("brands") or item.get("brand") or item.get("channel") or item.get("品牌") or ""
+            tier = item.get("tier") or item.get("price") or item.get("定位") or item.get("position") or item.get("level") or ""
+            if tier and tier not in brands:
+                brands = f"{brands} · <span class='text-[10px] text-[#ff641e] font-medium'>{tier}</span>" if brands else tier
+            oem = item.get("oem") or item.get("opportunity") or item.get("oem_space") or item.get("契机") or item.get("source") or item.get("detail") or item.get("desc") or ""
+        elif isinstance(item, (list, tuple)) and len(item) >= 3:
+            cat, brands, oem = item[0], item[1], item[2]
+        else:
+            continue
+
         rows.append(f"""<tr>
     <td class="p-2.5 font-semibold bg-[rgba(160,109,68,0.02)]">{cat}</td>
     <td class="p-2.5 border-r border-[rgba(160,109,68,0.08)]">{brands}</td>
-    <td class="p-2.5 text-[#7a756f]">{oem}</td>
+    <td class="p-2.5 text-[#7a756f] leading-relaxed">{oem}</td>
 </tr>""")
 
-    return f"""<div class="overflow-x-auto">
+        if cat:
+            matrix_chips.append(f"""<div class="p-2 rounded-lg bg-[#f6f3ec] border border-[rgba(160,109,68,0.1)] text-center">
+    <strong class="block text-xs text-[#3c3935] truncate">{cat}</strong>
+    <span class="text-[10px] text-[#ff641e] font-medium truncate block">{strip_html_tags(brands)[:24]}</span>
+</div>""")
+
+    matrix_header = ""
+    if matrix_chips:
+        matrix_header = f"""<div class="mb-3.5 p-3 rounded-xl bg-[#fdfbf7] border border-[rgba(160,109,68,0.12)]">
+    <div class="text-[10px] text-[#ff641e] font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <i data-lucide="layout-grid" size="13"></i> 自主品牌品类梯队分布矩阵
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {"".join(matrix_chips)}
+    </div>
+</div>"""
+
+    return f"""{matrix_header}
+<div class="overflow-x-auto">
     <table class="w-full text-xs text-left text-[#3c3935] border border-[rgba(160,109,68,0.12)] rounded-lg">
         <thead class="bg-[#f6f3ec] text-[#ff641e] font-bold border-b border-[rgba(160,109,68,0.12)]">
             <tr>
@@ -307,56 +346,147 @@ def generate_brand_table_html(brand_table_list):
 
 
 def generate_oem_opportunity_html(oem_data):
-    """生成代工与贴牌商机卡片"""
+    """生成代工与贴牌商机卡片（兼容 dict, list, str）"""
     if not oem_data:
         return ""
     if isinstance(oem_data, str):
         if "<div" in oem_data:
             return oem_data
-        title = "去欧美化后的中国源头工厂直采红利"
-        tag = "战略合作高地"
-        desc = oem_data
+        items = [{"title": "去欧美化后的中国源头工厂直采红利", "tag": "战略合作高地", "desc": oem_data}]
     elif isinstance(oem_data, dict):
-        title = oem_data.get("title", "代工与贴牌核心商机洞察")
-        tag = oem_data.get("tag", "核心商机")
-        desc = oem_data.get("desc", "")
+        items = [oem_data]
+    elif isinstance(oem_data, list):
+        items = oem_data
     else:
         return str(oem_data)
 
-    return f"""<div class="p-4 rounded-xl bg-[#fdfbf7] border border-[rgba(160,109,68,0.12)] space-y-3">
+    cards = []
+    for idx, it in enumerate(items):
+        if isinstance(it, dict):
+            title = it.get("title") or it.get("category") or it.get("name") or f"核心商机 {idx+1}"
+            tag = it.get("tag") or it.get("potential") or it.get("tier") or it.get("badge") or "核心商机"
+            desc = it.get("desc") or it.get("pain_points") or it.get("detail") or it.get("content") or ""
+        else:
+            title = f"核心商机 {idx+1}"
+            tag = "合作商机"
+            desc = str(it)
+
+        cards.append(f"""<div class="p-3.5 rounded-xl bg-[#fdfbf7] border border-[rgba(160,109,68,0.12)] space-y-1.5">
     <div class="flex items-center gap-2">
         <span class="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded">{tag}</span>
         <h5 class="text-xs font-bold text-[#3c3935]">{title}</h5>
     </div>
     <p class="text-xs text-[#7a756f] leading-relaxed">{desc}</p>
+</div>""")
+
+    return f"""<div class="space-y-3">
+{"".join(cards)}
 </div>"""
 
 
-def generate_decision_chain_html(decision_list):
-    """生成组织架构与采购决策链四象限卡片"""
-    if not decision_list or not isinstance(decision_list, list):
+def generate_decision_chain_html(decision_data):
+    """生成组织架构与采购决策链高保真卡片与可视化流程图（彻底杜绝长文本塞入圆形序号徽章导致的垂直溢出重叠）"""
+    if not decision_data:
         return ""
+    if isinstance(decision_data, str) and "<div" in decision_data:
+        return decision_data
+
     cards = []
+    flow_steps = []
     color_classes = [
         ("bg-blue-100 text-blue-600"),
         ("bg-[#ff641e]/10 text-[#ff641e]"),
         ("bg-purple-100 text-purple-600"),
-        ("bg-amber-100 text-amber-600")
+        ("bg-amber-100 text-amber-600"),
+        ("bg-emerald-100 text-emerald-600")
     ]
-    for idx, item in enumerate(decision_list):
-        step_num = item.get("step") or str(idx + 1)
-        role = item.get("role") or item.get("title", "")
-        desc = item.get("desc") or item.get("content", "")
+
+    steps_list = []
+    if isinstance(decision_data, dict):
+        # 1. 提取流转环节流程图 (flow)
+        raw_flow = decision_data.get("flow") or decision_data.get("采购决策核心链") or decision_data.get("决策链") or decision_data.get("流程") or ""
+        if isinstance(raw_flow, list):
+            for n in raw_flow:
+                n_clean = re.sub(r'\(.*?\)|（.*?）', '', str(n)).strip()
+                if n_clean:
+                    flow_steps.append(n_clean)
+        elif isinstance(raw_flow, str) and ("➔" in raw_flow or "->" in raw_flow):
+            for n in re.split(r'➔|->', raw_flow):
+                n_clean = re.sub(r'\(.*?\)|（.*?）', '', n).strip()
+                if n_clean:
+                    flow_steps.append(n_clean)
+        
+        # 2. 提取步骤卡片列表 (steps)
+        if "steps" in decision_data and isinstance(decision_data["steps"], list):
+            steps_list = decision_data["steps"]
+        else:
+            for k, v in decision_data.items():
+                if k in ["flow", "采购决策核心链", "决策链", "流程"]:
+                    continue
+                steps_list.append({"step": k, "desc": v})
+    elif isinstance(decision_data, list):
+        steps_list = decision_data
+
+    for idx, item in enumerate(steps_list):
+        num_badge = f"{idx+1:02d}"
         badge_cls = color_classes[idx % len(color_classes)]
+        if isinstance(item, dict):
+            raw_step = str(item.get("step") or item.get("title") or item.get("name") or "").strip()
+            raw_role = str(item.get("role") or item.get("department") or item.get("owner") or "").strip()
+            desc = str(item.get("desc") or item.get("content") or item.get("detail") or "").strip()
+
+            if raw_step and not raw_step.isdigit():
+                step_heading = raw_step
+                sub_role = raw_role if raw_role and raw_role != raw_step else ""
+                if not flow_steps:
+                    flow_steps.append(raw_step if len(raw_step) <= 12 else (raw_role or raw_step[:10]))
+            else:
+                step_heading = raw_role or f"决策节点 {idx+1}"
+                sub_role = ""
+                if not flow_steps:
+                    flow_steps.append(step_heading)
+        elif isinstance(item, str):
+            parts = item.split(":", 1) if ":" in item else item.split("：", 1)
+            step_heading = parts[0].strip()
+            desc = parts[1].strip() if len(parts) > 1 else ""
+            sub_role = ""
+            if not flow_steps:
+                flow_steps.append(step_heading)
+        else:
+            continue
+
+        role_badge = f'<span class="text-[10px] text-[#ff641e] bg-[#ff641e]/10 px-2 py-0.5 rounded font-medium ml-auto">{sub_role}</span>' if sub_role else ""
+
         cards.append(f"""<div class="p-3.5 rounded-xl bg-[#fdfbf7] border border-[rgba(160,109,68,0.1)]">
-    <div class="flex items-center gap-2 mb-1.5">
-        <div class="w-5 h-5 rounded-full {badge_cls} flex items-center justify-center font-bold text-[10px]">{step_num}</div>
-        <strong class="text-[#3c3935]">{role}</strong>
+    <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+        <div class="w-5 h-5 rounded-full {badge_cls} flex items-center justify-center font-bold text-[10px] shrink-0 overflow-hidden">{num_badge}</div>
+        <strong class="text-[#3c3935] text-xs font-bold">{step_heading}</strong>
+        {role_badge}
     </div>
-    <p class="text-[#7a756f]">{desc}</p>
+    <p class="text-[#7a756f] leading-relaxed text-[11px]">{desc}</p>
 </div>""")
 
+    flow_html = ""
+    if flow_steps:
+        node_divs = []
+        for i, step in enumerate(flow_steps):
+            node_divs.append(f"""<div class="flex items-center shrink-0">
+    <div class="px-2.5 py-1.5 bg-[#f6f3ec] border border-[rgba(160,109,68,0.15)] rounded-lg text-center font-semibold text-[11px] text-[#3c3935] shadow-sm">
+        {step}
+    </div>
+    {'' if i == len(flow_steps) - 1 else '<div class="px-1.5 text-[#ff641e] font-bold text-xs shrink-0">➔</div>'}
+</div>""")
+        flow_html = f"""<div class="p-3 rounded-xl bg-[#fdfbf7] border border-[rgba(160,109,68,0.12)] mb-3 overflow-x-auto">
+    <div class="text-[10px] text-[#ff641e] font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <i data-lucide="git-merge" size="13"></i> 采购组织流转与核决链路图
+    </div>
+    <div class="flex items-center flex-nowrap min-w-max gap-1">
+        {"".join(node_divs)}
+    </div>
+</div>"""
+
     return f"""<div class="space-y-3 text-xs leading-relaxed">
+    {flow_html}
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 {"".join(cards)}
     </div>
@@ -383,9 +513,22 @@ def generate_contact_path_html(contact_data):
 </div>""")
     elif isinstance(contact_data, list):
         for item in contact_data:
-            title = item.get("title", "")
-            val = item.get("value", "")
-            val_html = f'<a href="{val}" target="_blank" class="text-blue-500 hover:underline font-mono text-[11px]">{val}</a>' if "http" in val else f'<span class="text-[#7a756f] text-[11px]">{val}</span>'
+            title = item.get("title") or item.get("role") or ""
+            portal = item.get("portal") or item.get("value") or ""
+            path = item.get("path") or item.get("desc") or item.get("contact") or ""
+            
+            if portal and path and portal != path:
+                val_html = f'<span class="text-[#ff641e] font-semibold text-[11px] block mb-0.5">{portal}</span><span class="text-[#7a756f] text-[11px] leading-relaxed block">{path}</span>'
+            elif portal:
+                if "http" in str(portal) or "@" in str(portal):
+                    val_html = f'<a href="{portal}" target="_blank" class="text-blue-500 hover:underline font-mono text-[11px]">{portal}</a>'
+                else:
+                    val_html = f'<span class="text-[#7a756f] text-[11px] leading-relaxed">{portal}</span>'
+            elif path:
+                val_html = f'<span class="text-[#7a756f] text-[11px] leading-relaxed">{path}</span>'
+            else:
+                val_html = '<span class="text-[#7a756f] text-[11px] leading-relaxed">官方采购委员会 / 供应链对接办公室</span>'
+
             items.append(f"""<div class="p-3 rounded-xl bg-[#fdfbf7] border border-[rgba(160,109,68,0.1)]">
     <strong class="text-[#3c3935] block mb-1">{title}</strong>
     {val_html}
@@ -435,26 +578,34 @@ def generate_compliance_html(compliance_list):
 
 def generate_pain_points_html(pain_points_list):
     """生成产品差评与设计痛点卡片"""
-    if not pain_points_list or not isinstance(pain_points_list, list):
+    if not pain_points_list:
         return ""
+    if isinstance(pain_points_list, str) and "<div" in pain_points_list:
+        return pain_points_list
+    if not isinstance(pain_points_list, list):
+        pain_points_list = [pain_points_list]
+
     cards = []
-    badge_colors = {
-        "严重": "text-red-500",
-        "结构性": "text-red-500",
-        "高频": "text-amber-500",
-        "下沉": "text-amber-500"
-    }
     for idx, item in enumerate(pain_points_list, 1):
-        title = item.get("title", f"痛点 {idx}")
-        tag = item.get("tag") or item.get("level", "严重负评集中区")
-        desc = item.get("desc") or item.get("content", "")
-        tag_color = "text-red-500" if any(k in tag for k in ["严重", "缺口", "致命", "失效"]) else "text-amber-500"
+        if isinstance(item, dict):
+            title = item.get("title") or item.get("issue") or item.get("name") or f"痛点 {idx}"
+            tag = item.get("tag") or item.get("level") or "高频痛点"
+            desc = item.get("desc") or item.get("quote") or item.get("content") or item.get("detail") or ""
+        elif isinstance(item, str):
+            parts = item.split(":", 1) if ":" in item else item.split("：", 1)
+            title = parts[0].strip()
+            desc = parts[1].strip() if len(parts) > 1 else ""
+            tag = "高频反馈"
+        else:
+            continue
+
+        tag_color = "text-red-500" if any(k in tag for k in ["严重", "缺口", "致命", "失效", "高频", "痛点"]) else "text-amber-500"
         cards.append(f"""<div class="p-3.5 rounded-xl bg-[#fdfbf7] border border-[rgba(160,109,68,0.1)]">
     <div class="flex justify-between items-center mb-1">
         <strong class="text-[#3c3935] text-xs font-bold">{title}</strong>
         <span class="text-[10px] {tag_color} font-semibold">{tag}</span>
     </div>
-    <p class="text-[#7a756f] leading-relaxed">{desc}</p>
+    <p class="text-[#7a756f] leading-relaxed text-[11px]">{desc}</p>
 </div>""")
 
     return "\n".join(cards)
@@ -467,18 +618,30 @@ def generate_social_media_html(social_data):
     if isinstance(social_data, str) and "<div" in social_data:
         return social_data
     
+    if isinstance(social_data, list):
+        items = []
+        for item in social_data:
+            if isinstance(item, dict):
+                platform = item.get("platform") or item.get("name") or item.get("channel") or "社交渠道"
+                focus = item.get("focus") or item.get("desc") or item.get("content") or item.get("sentiment") or ""
+                items.append(f"""<div class="p-2.5 rounded-lg bg-[#f6f3ec] border border-[rgba(160,109,68,0.08)] mb-2">
+    <strong class="text-xs text-[#3c3935] block mb-0.5">{platform}</strong>
+    <span class="text-[11px] text-[#7a756f] leading-relaxed block">{focus}</span>
+</div>""")
+            elif isinstance(item, str):
+                items.append(f"""<div class="p-2.5 rounded-lg bg-[#f6f3ec] border border-[rgba(160,109,68,0.08)] mb-2 text-[11px] text-[#7a756f] leading-relaxed">{item}</div>""")
+        return "".join(items)
+
     if isinstance(social_data, dict):
-        score = social_data.get("score", "综合评分 4.5/5.0")
-        satisfaction = social_data.get("satisfaction", "好评率 90%+")
-        pros = social_data.get("pros", "")
-        cons = social_data.get("cons", "")
-        source = social_data.get("source", "")
-    else:
-        return str(social_data)
+        if any(k in social_data for k in ["score", "satisfaction", "pros", "cons"]):
+            score = social_data.get("score", "综合评分 4.5/5.0")
+            satisfaction = social_data.get("satisfaction", "好评率 90%+")
+            pros = social_data.get("pros", "")
+            cons = social_data.get("cons", "")
+            source = social_data.get("source", "")
+            source_html = f'<a href="{source}" target="_blank" class="text-blue-500 hover:underline text-[11px] block mt-1">来源：官方社媒与消费者原声</a>' if source else ""
 
-    source_html = f'<a href="{source}" target="_blank" class="text-blue-500 hover:underline text-[11px] block mt-1">来源：官方社媒与消费者原声</a>' if source else ""
-
-    return f"""<div class="text-xs text-[#7a756f] leading-relaxed space-y-2">
+            return f"""<div class="text-xs text-[#7a756f] leading-relaxed space-y-2">
     <div class="flex items-center gap-2 mb-1">
         <span class="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded">{score}</span>
         <span class="text-[10px] text-[#3c3935] font-semibold">{satisfaction}</span>
@@ -487,6 +650,16 @@ def generate_social_media_html(social_data):
     <p><strong>高频改进诉求：</strong>{cons}</p>
     {source_html}
 </div>"""
+        else:
+            items = []
+            for k, v in social_data.items():
+                items.append(f"""<div class="p-2.5 rounded-lg bg-[#f6f3ec] border border-[rgba(160,109,68,0.08)] mb-2">
+    <strong class="text-xs text-[#3c3935] block mb-0.5">{k}</strong>
+    <span class="text-[11px] text-[#7a756f] leading-relaxed block">{v}</span>
+</div>""")
+            return "".join(items)
+
+    return f'<div class="text-[11px] text-[#7a756f]">{strip_html_tags(str(social_data))}</div>'
 
 
 def generate_improvements_html(improvements_list):
@@ -540,6 +713,25 @@ def auto_expand_pure_data(data_dict):
     # 3. 品牌矩阵 8 宫格
     if "BRAND_MATRIX_DATA" in data_dict and not data_dict.get("SECTION_1_BRAND_MATRIX"):
         data_dict["SECTION_1_BRAND_MATRIX"] = generate_brand_matrix_html(data_dict["BRAND_MATRIX_DATA"])
+    elif not data_dict.get("SECTION_1_BRAND_MATRIX"):
+        derived_brands = []
+        if data_dict.get("BRAND_TABLE_DATA") and isinstance(data_dict["BRAND_TABLE_DATA"], list):
+            for b_item in data_dict["BRAND_TABLE_DATA"][:4]:
+                if isinstance(b_item, dict):
+                    b_name = b_item.get("brand") or b_item.get("brands") or b_item.get("category") or ""
+                    b_desc = b_item.get("category") or b_item.get("position") or b_item.get("tier") or b_item.get("oem") or ""
+                    if b_name:
+                        derived_brands.append({"name": b_name, "desc": b_desc})
+        if not derived_brands and data_dict.get("PRODUCTS"):
+            prods = [p.strip() for p in re.split(r'[,，]', data_dict["PRODUCTS"]) if p.strip()]
+            for p in prods[:4]:
+                derived_brands.append({"name": p, "desc": "核心自主品类线 · 重点外贸与OEM合作矩阵"})
+        if derived_brands:
+            data_dict["SECTION_1_BRAND_MATRIX"] = generate_brand_matrix_html({
+                "title": "核心合作品牌与授权分销矩阵",
+                "subtitle": "全渠道授权目录",
+                "brands": derived_brands
+            })
 
     # 4. 发展历程时间线
     if "TIMELINE_DATA" in data_dict and not data_dict.get("SECTION_1_TIMELINE"):
@@ -580,6 +772,22 @@ def auto_expand_pure_data(data_dict):
     # 13. 准入合规红线
     if "COMPLIANCE_DATA" in data_dict and not data_dict.get("SECTION_6_COMPLIANCE"):
         data_dict["SECTION_6_COMPLIANCE"] = generate_compliance_html(data_dict["COMPLIANCE_DATA"])
+
+    # 13.5 物流渠道提示兜底自愈生成
+    if not data_dict.get("SECTION_6_LOGISTICS_TIP"):
+        log_tip = data_dict.get("LOGISTICS_TIP") or ""
+        if not log_tip:
+            regions_str = str(data_dict.get("REGIONS") or data_dict.get("COUNTRY") or "")
+            comp_name = data_dict.get("COMPANY_NAME", "目标企业")
+            if any(k in regions_str for k in ["波兰", "Poland", "德国", "中东欧", "捷克", "匈牙利"]):
+                log_tip = "中东欧国际多式联运贴士：大宗物资推荐依托青岛/日照直航波兰格但斯克港（Port of Gdańsk）深水集装箱航线（航程约32-35天），高时效紧急物料可走中欧班列直达马拉舍维奇（Małaszewicze）铁路口岸（全程仅14-16天）；清关前须备齐欧盟 CE 认证 DoP 符合性声明、REACH 吨位涵盖合规证明或 GMP+ 供应链卫生证书，报关单证严格实行英语与波兰语双语对齐。"
+            elif any(k in regions_str for k in ["西班牙", "Spain", "葡萄牙", "南欧", "巴塞罗那", "瓦伦西亚"]):
+                log_tip = "南欧海运与自贸区保税通关贴士：货物直达巴塞罗那港（Port of Barcelona）或瓦伦西亚港（Port of Valencia），具备自贸区快速落港中转优势；对欧出口化学品、纺织品与工业零配件须前置委托欧洲唯一代表（OR）出具合规声明，清关单据必须包含英语及西班牙语双语提单、发票装箱单与 CLP 分类标签，确保海关绿色通道高效放行。"
+            elif any(k in regions_str for k in ["俄罗斯", "Russia", "独联体"]):
+                log_tip = "欧亚陆桥通关与结算贴士：推荐走满洲里/霍尔果斯口岸铁路直通班列，或经圣彼得堡/东方港海运中转；出口前必须由俄联邦授权机构出具全套 EAC 符合性声明（TR CU 004/020/010），提单及包装需注明 GOST 认证标识与俄语双语安全说明书。"
+            else:
+                log_tip = "欧洲干线海运与清关贴士：欧洲核心基本港（鹿特丹/汉堡/安特卫普）海运直达，建议采用 40HQ 强化集装箱出运；出口企业需提前获取目标国海关 EORI 识别码与 EU REACH/CE 准入许可，单证实行双语规范化校核以加速通关放行。"
+        data_dict["SECTION_6_LOGISTICS_TIP"] = log_tip
 
     # 14. 差评与设计痛点
     if "PAIN_POINTS_DATA" in data_dict and not data_dict.get("SECTION_7_PAIN_POINTS"):

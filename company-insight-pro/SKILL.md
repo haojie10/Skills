@@ -31,7 +31,7 @@ description: 360度企业战略情报洞察工具。用于为特定企业生成�
    ```
 2. **运行查重门禁脚本**：
    ```bash
-   python C:/Users/066/.gemini/config/skills/company-insight-pro/scripts/check_report.py --company "目标公司名"
+   python scripts/check_report.py --company "目标公司名"
    ```
    * 🚨 **【品类报告与客户报告物理隔离铁律（严禁跨类别覆盖）】**：
      * 平台报告分为两大独立资产体系：**品类出海洞察报告（`category='product'`）** 与 **客户战略情报报告（`category='customer'`）**。

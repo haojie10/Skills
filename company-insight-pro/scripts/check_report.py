@@ -54,7 +54,7 @@ def clean_name_for_search(name):
         return ""
     # 移除常见法律后缀
     cleaned = re.sub(
-        r'\b(AG|GmbH|LLC|Inc\.?|Ltd\.?|Corp\.?|PLC|SA|SAS|BV|SE|S\.A\.B\.|Co\.,\s*Ltd\.?|S\.p\.A\.|Pty\s*Ltd|Pty\s*Limited|Co\.?)\b',
+        r'\b(AG|GmbH|LLC|Inc\.?|Ltd\.?|Corp\.?|PLC|SA|SAS|BV|SE|S\.A\.B\.|Co\.,\s*Ltd\.?|S\.p\.A\.|Pty\s*Ltd|Pty\s*Limited|Co\.?|Sp\.\s*z\s*o\.\s*o\.|Sp\s*z\s*o\s*o|Spzoo|Spolka\s*z\s*o\s*o|s\.r\.o\.|sro)\b',
         '',
         name,
         flags=re.IGNORECASE
@@ -77,7 +77,11 @@ def get_core_tokens(name):
         'enterprise', 'enterprises', 'company', 'brothers', 'spa',
         'comercial', 'comercio', 'industrias', 'industria', 'sociedad',
         'importadora', 'exportadora', 'corporacion', 'distribuidora',
-        'import', 'export', 'grosshandel', 'großhandel', 'handel', 'handelsgesellschaft',
+        'import', 'export', 'imports', 'exports', 'agency',
+        'grosshandel', 'großhandel', 'handel', 'handelsgesellschaft',
+        'bargain', 'outlet', 'outlets', 'store', 'stores', 'shop', 'shops', 'market', 'supermarket',
+        'poland', 'polska', 'germany', 'deutschland', 'france', 'spain', 'espana', 'italy', 'italia',
+        'china', 'usa', 'uk', 'netherlands', 'belgium', 'europe',
         '360°', '企业战略情报报告', '战略情报报告', '客户洞察', '深度研报'
     }
     tokens = [w for w in cleaned.split() if w not in common_words and len(w) > 1]
@@ -128,6 +132,9 @@ def check_company_report(company_name, api_url=None, api_key=None):
         if r.get('category') and r.get('category') != target_category:
             continue
         title = (r.get('title') or '')
+        if any(kw in title for kw in ['品类洞察', '品类调研', '研发升级方案', '渠道调研报告', '渠道深度调研报告', '渠道对比']):
+            continue
+
         rep_company = (r.get('company_name') or '')
         
         # 1. 尝试比对已有报告标题与已有报告主体名

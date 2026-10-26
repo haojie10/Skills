@@ -149,10 +149,16 @@ def ensure_official_mg_logo(html_content):
         html_content = re.sub(r'<img\s+[^>]*alt=["\']Market Graphic["\'][^>]*>', lambda m: fix_img_src(m.group(0)), html_content, flags=re.IGNORECASE)
         html_content = re.sub(r'<img\s+[^>]*src=["\'][^"\']+["\'][^>]*alt=["\']Market Graphic["\'][^>]*>', lambda m: fix_img_src(m.group(0)), html_content, flags=re.IGNORECASE)
 
-        # 2. 匹配包含 powered-by-mg 或指向 marketgraphic.cn 的 <a> 链接内部的 <img>
+        # 2. 匹配包含 powered-by-mg 或指向 marketgraphic.cn 的 <a> 链接
         def fix_container(m):
             container = m.group(0)
-            return re.sub(r'<img\s+[^>]*>', lambda im: fix_img_src(im.group(0)), container, count=1, flags=re.IGNORECASE)
+            if "<img" in container.lower():
+                return re.sub(r'<img\s+[^>]*>', lambda im: fix_img_src(im.group(0)), container, count=1, flags=re.IGNORECASE)
+            else:
+                # 若容器内缺少 img 标签，自动无缝注入完整的官方 logo img
+                print("[OK] Auto-injected missing Market Graphic Logo into powered-by-mg link!")
+                logo_html = f'<img src="{full_logo_src}" alt="Market Graphic" style="height: 22px; width: auto; object-fit: contain; vertical-align: middle;">'
+                return re.sub(r'(<span>Powered by</span>\s*)(?:<!--.*?-->)?(\s*</a>)', rf'\1{logo_html}\2', container, flags=re.IGNORECASE | re.DOTALL)
 
         html_content = re.sub(r'<a\s+[^>]*class=["\'][^"\']*powered-by-mg[^"\']*["\'][^>]*>.*?</a>', fix_container, html_content, flags=re.IGNORECASE | re.DOTALL)
         html_content = re.sub(r'<a\s+[^>]*href=["\']https?://marketgraphic\.cn["\'][^>]*>.*?</a>', fix_container, html_content, flags=re.IGNORECASE | re.DOTALL)

@@ -118,7 +118,8 @@ def validate_html(html_path):
     if "competitors" in meta_values and meta_values["competitors"]:
         print("[*] 正在审计 competitors 管道格式与实体名称规范化...")
         comp_items = [c.strip() for c in meta_values["competitors"].split(",") if c.strip()]
-        legal_suffixes = [r'\bLLC\b', r'\bInc\.?\b', r'\bLtd\.?\b', r'\bCorp\.?\b', r'\bGmbH\b', r'\bAG\b', r'\bPLC\b', r'\bSA\b', r'\bSAS\b', r'\bBV\b', r'\bSE\b', r'\bS\.A\.B\.\b', r'Co\.,\s*Ltd\.?']
+        legal_suffixes = [r'\bLLC\b', r'\bInc\.?\b', r'\bLtd\.?\b', r'\bCorp\.?\b', r'\bGmbH\b', r'\bPLC\b', r'\bSAS\b', r'\bBV\b', r'\bS\.A\.B\.\b', r'Co\.,\s*Ltd\.?']
+        case_sensitive_suffixes = [r'\bAG\b', r'\bSA\b', r'\bSE\b']
         for item in comp_items:
             entity_name = item.split("|")[0].strip()
             if not entity_name:
@@ -133,6 +134,14 @@ def validate_html(html_path):
                     success = False
                     has_suffix = True
                     break
+            if not has_suffix:
+                for s_pat in case_sensitive_suffixes:
+                    if re.search(s_pat, entity_name):
+                        print(f"  [ERROR] 🚨 实体名称 \"{entity_name}\" 包含法律后缀 (正则匹配: {s_pat})！必须去除法律后缀保持纯商业名。")
+                        success = False
+                        has_suffix = True
+                        break
+
             if not has_suffix:
                 # 检查正文是否存在该实体
                 body_match = re.search(r'<main.*?>.*?</main>', content, re.IGNORECASE | re.DOTALL)
