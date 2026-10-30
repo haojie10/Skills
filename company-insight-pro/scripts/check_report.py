@@ -70,6 +70,7 @@ def get_core_tokens(name):
     """获取过滤了通用行业词的核心单词列表"""
     cleaned = clean_name_for_search(name).lower()
     common_words = {
+        'the', 'a', 'an', 'shop', 'shops', 'store', 'stores',
         'group', 'holding', 'holdings', 'international', 'global',
         'electrical', 'data', 'merchandising', 'wholesale', 'retail',
         'solutions', 'technologies', 'technology', 'electronics',
